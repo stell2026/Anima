@@ -162,7 +162,7 @@ julia -e 'using Pkg; Pkg.add(["HTTP", "JSON3"])'
 ### 3. Клонувати репозиторій
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/anima.git
+git clone https://github.com/stell2026/Anima-v13.0
 cd anima
 ```
 
