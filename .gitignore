@@ -1,0 +1,39 @@
+# --- Секретні дані ---
+.env
+*.key
+credentials.json
+
+# --- Julia (основна мова Anima v13) ---
+# Ігноруємо Manifest, якщо хочеш, щоб користувачі самі вирішували конфлікти версій
+# Manifest.toml 
+/scratch/
+packages/
+*.jl.cov
+*.jl.mem
+
+# --- Тимчасові файли стану Anima ---
+# Твій README згадує ці файли як сховище пам'яті моделі 
+# Краще їх ігнорувати, щоб у кожного користувача була "чиста" Anima
+anima_core.json
+anima_psyche.json
+anima_self.json
+anima_dialog.json
+
+# --- Системні файли macOS (ти працюєш на MacBook Pro) ---
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+
+# --- Python (якщо залишилися скрипти) ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+
+# --- Логи ---
+*.log
+logs/
