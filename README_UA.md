@@ -289,21 +289,6 @@ repl!(anima;
     llm_model = "claude-opus-4-5-20251101")
 ```
 
-### Варіант Г: Groq (безкоштовний рівень, дуже швидко)
-
-```bash
-export GROQ_API_KEY="gsk_..."
-```
-
-```julia
-repl!(anima;
-    use_llm   = true,
-    llm_url   = "https://api.groq.com/openai/v1/chat/completions",
-    llm_model = "llama-4-maverick-17b-128e-instruct")
-```
-
----
-
 ## Рекомендовані моделі
 
 > Малі моделі (7B і менше) відповідають, але не утримують нюанси state-prompt. Щоб система справді *населяла* стан у мові, потрібна модель достатньо велика, щоб одночасно тримати весь феноменологічний фрейм.
