@@ -289,19 +289,6 @@ repl!(anima;
     llm_model = "claude-opus-4-5-20251101")
 ```
 
-### Option D: Groq (free tier, very fast)
-
-```bash
-export GROQ_API_KEY="gsk_..."
-```
-
-```julia
-repl!(anima;
-    use_llm   = true,
-    llm_url   = "https://api.groq.com/openai/v1/chat/completions",
-    llm_model = "llama-4-maverick-17b-128e-instruct")
-```
-
 ---
 
 ## Recommended Models
