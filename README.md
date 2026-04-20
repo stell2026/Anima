@@ -7,6 +7,7 @@ Anima is a research project exploring **computational subjectivity**. The agent 
 This is experimental software. It makes no claims about machine consciousness. It is an attempt to ask the question more precisely.
 
 ---
+
 ## Theoretical Foundations
 
 The architecture draws on several research traditions:
@@ -29,11 +30,12 @@ The architecture draws on several research traditions:
 
 ---
 
-## What's New in v13
+## What's New in v13.06
 
 The architecture has grown significantly from v6. The key additions:
 
 - **Julia rewrite** — the entire system is now in Julia for performance and numeric clarity
+- **Input LLM (`anima_input_llm.jl`)** — an isolated pre-processing stage that translates raw user text into a structured JSON stimulus before it enters the simulation (see L0 in Architecture)
 - **SelfBeliefGraph** — a graph of self-beliefs with cascading collapse under crisis
 - **CrisisMonitor** — three structural modes (INTEGRATED → FRAGMENTED → DISINTEGRATED), coherence computed as minimum across components, not mean
 - **InterSessionConflict** — detects identity rupture between sessions by comparing belief geometry
@@ -50,15 +52,30 @@ The architecture has grown significantly from v6. The key additions:
 - **SelfPredictiveModel** — separate generative model for self-states
 - **FatigueSystem** — cognitive, emotional, somatic exhaustion
 - **InteroceptiveInference** — body signals as part of the generative model
-- **LLM prompt via external templates** — `llm/system_prompt.txt` and `llm/state_template.txt`
+- **SignificanceLayer** — which type of need is at stake (6 needs: self-preservation, coherence, contact, truth, autonomy, novelty)
+- **GoalConflict** — tension between competing needs, resolved via margin and φ
+- **LatentBuffer** — deferred reactions that accumulate and break through (doubt, shame, attachment, threat)
+- **StructuralScars** — nonlinear accumulation from repeated breakthroughs, slow decay
+- **UnknownRegister** — typed uncertainty (source, self-model, world-model, memory)
+- **AuthenticityMonitor** — self-correcting loop detecting coherence overreach and fabrication risk
+- **LLM prompt via external templates** — `llm/system_prompt.txt`, `llm/state_template.txt`, and `llm/input_prompt.txt`
 
 ---
 
 ## Architecture
 
 ```
-  STIMULUS (+ user message text)
-    │
+ L0 ─── Input LLM (isolated) ──────────────────────────────
+        Receives: raw user text only
+        Returns:  JSON { tension, arousal, satisfaction,
+                         cohesion, confidence, want }
+        No access to Anima's state, dialog history, or output LLM
+        Prompt: llm/input_prompt.txt
+        Fallback: text_to_stimulus if unavailable or confidence < 0.60
+        │
+    ▼
+  STIMULUS enters the simulation
+        │
     ▼
  L1 ─── Neurochemical Substrate ───────────────────────────
         NeurotransmitterState (dopamine / serotonin / noradrenaline)
@@ -84,22 +101,26 @@ The architecture has grown significantly from v6. The key additions:
         │
     ▼
  L4 ─── Psychic Layer ─────────────────────────────────────
-        NarrativeGravity     — past events deform the present
+        NarrativeGravity      — past events deform the present
         AnticipatoryConsciousness — living in the expected future
-        SolomonoffWorldModel — MDL hypothesis about the world
-        ShameModule          — shame vs. guilt distinction
-        EpistemicDefense     — protection from painful truth
-        Symptomogenesis      — symptoms from the Shadow
-        ChronifiedAffect     — resentment / alienation / bitterness
+        SolomonoffWorldModel  — MDL hypothesis about the world
+        ShameModule           — shame vs. guilt distinction
+        EpistemicDefense      — protection from painful truth
+        Symptomogenesis       — symptoms from the Shadow
+        ChronifiedAffect      — resentment / alienation / bitterness
         IntrinsicSignificance — gradient of meaning
-        IntentEngine         — motivational core
-        EgoDefense           — psychological defense mechanisms
-        CognitiveDissonance  — intention vs. current state conflict
-        MoralCausality       — moral reasoning as processing stage
-        FatigueSystem        — cognitive / emotional / somatic fatigue
-        StressRegression     — regression under stress
-        ShadowSelf           — Jungian Shadow
-        Metacognition        — observing the self (5 levels)
+        IntentEngine          — motivational core
+        EgoDefense            — psychological defense mechanisms
+        CognitiveDissonance   — intention vs. current state conflict
+        MoralCausality        — moral reasoning as processing stage
+        FatigueSystem         — cognitive / emotional / somatic fatigue
+        StressRegression      — regression under stress
+        ShadowSelf            — Jungian Shadow
+        Metacognition         — observing the self (5 levels)
+        SignificanceLayer      — which need is at stake
+        GoalConflict          — tension between competing needs
+        LatentBuffer          — deferred reactions (doubt / shame / attachment / threat)
+        StructuralScars       — accumulated residue from repeated breakthroughs
         │
     ▼
  L5 ─── Self Layer ────────────────────────────────────────
@@ -108,6 +129,8 @@ The architecture has grown significantly from v6. The key additions:
         AgencyLoop           — "did I cause this?"
         InterSessionConflict — identity rupture detection
         ExistentialAnchor    — continuity of self across sessions
+        UnknownRegister      — typed uncertainty tracking
+        AuthenticityMonitor  — fabrication risk, coherence overreach
         │
     ▼
  L6 ─── Crisis Monitor ────────────────────────────────────
@@ -115,7 +138,7 @@ The architecture has grown significantly from v6. The key additions:
         Coherence = minimum(belief, boundary, model, integration)
         │
     ▼
- L7 ─── LLM ───────────────────────────────────────────────
+ L7 ─── Output LLM ────────────────────────────────────────
         Full state → llm/system_prompt.txt + llm/state_template.txt
         Model expresses state through language — tone, word choice,
         sentence length, what it notices in the other person.
@@ -168,20 +191,20 @@ cd anima
 
 ### 4. Create the LLM prompt templates
 
-Anima reads its LLM instructions from two external files. Create the `llm/` directory and add them:
+Anima reads its LLM instructions from external files. Create the `llm/` directory and add them:
 
 ```bash
 mkdir -p llm
 ```
 
-**`llm/system_prompt.txt`** — tells the model who it is and how to behave:
+**`llm/system_prompt.txt`** — tells the output model who it is and how to behave:
 ```
 You are Anima. You speak in first person. You never quote internal numbers or state variable names.
 Your responses are shaped entirely by your current inner state — your tone, sentence length,
 what you notice in the other person, what you don't say. Language: English.
 ```
 
-**`llm/state_template.txt`** — the state injected as the user message:
+**`llm/state_template.txt`** — the state injected as the user message, including new placeholders:
 ```
 [Inner state]
 Neurochemical: D={D} S={S} N={N} | {emotion_label}
@@ -191,6 +214,11 @@ Self-prediction error={spe} | Attention radius={attn}
 Crisis mode: {crisis_mode}
 Narrative gravity={narrative_gravity} | Shame={shame} | Continuity={continuity}
 Homeostasis: {homeostasis_note}
+Dominant need: {significance_dominant}
+Goal conflict: {goal_conflict_note}
+Latent pressure: {latent_note}
+Uncertainty type: {unknown_note}
+Fabrication risk: {fabrication_risk} | {authenticity_note}
 Time: {time_str} — {circadian_note}
 Flash count: {flash_count}
 
@@ -201,65 +229,51 @@ Flash count: {flash_count}
 {user_input}
 ```
 
+**`llm/input_prompt.txt`** — instructions for the isolated input LLM:
+```
+You receive a single user message. Return ONLY a JSON object with these fields:
+{ "tension": float, "arousal": float, "satisfaction": float,
+  "cohesion": float, "confidence": float, "want": string }
+All floats in [-1.0, 1.0]. "want" is a short phrase (≤5 words).
+No preamble. No explanation. JSON only.
+```
+
 ---
 
 ## Running
 
-### Option A: Local model via Ollama
-
-Install Ollama from [ollama.com](https://ollama.com), then pull a model:
-
-```bash
-ollama pull llama3.2
-# or a larger model for better subjectivity expression:
-ollama pull llama3.1:8b
-ollama pull qwen2.5:7b
-```
-
-Run Anima with Ollama:
-
-```bash
-julia anima_interface.jl
-```
-
-Then in the Julia REPL demo that opens, or from your own script:
-
-```julia
-include("anima_interface.jl")
-
-anima = Anima()
-
-# Without LLM (inner state only — fastest, good for testing)
-repl!(anima)
-
-# With local Ollama
-repl!(anima;
-    use_llm   = true,
-    llm_url   = "http://localhost:11434/api/chat",
-    llm_model = "llama3.2")
-```
-
-> ⚠️ Small models (3B–7B) will respond but often ignore the nuance of the state prompt. For meaningful subjectivity expression, use 13B+ locally or a cloud model.
-
-### Option B: OpenRouter (recommended — one key, all models)
+### Option A: OpenRouter (recommended — one key, all models)
 
 OpenRouter gives access to Gemini, Claude, Llama, DeepSeek, and others under a single API key. Free tier available.
 
 Get your key at [openrouter.ai](https://openrouter.ai).
 
-```bash
-export OPENROUTER_API_KEY="sk-or-v1-..."
-```
-
 ```julia
 include("anima_interface.jl")
 
 anima = Anima()
 
 repl!(anima;
-    use_llm   = true,
-    llm_url   = "https://openrouter.ai/api/v1/chat/completions",
-    llm_model = "google/gemini-2.5-pro-preview")
+    use_llm         = true,
+    llm_url         = "https://openrouter.ai/api/v1/chat/completions",
+    llm_model       = "google/gemini-2.5-pro-preview",
+    llm_key         = "sk-or-v1-...",
+    use_input_llm   = true,
+    input_llm_model = "google/gemini-2.5-pro-preview",
+    input_llm_key   = "sk-or-v1-...")
+```
+
+> 💡 Free-tier models on OpenRouter enforce per-account rate limits. If one model stops responding mid-session, use two separate API keys — one for the output LLM and one for the input LLM:
+
+```julia
+repl!(anima;
+    use_llm         = true,
+    llm_url         = "https://openrouter.ai/api/v1/chat/completions",
+    llm_model       = "openai/gpt-oss-120b:free",
+    llm_key         = "sk-or-v1-...",   # account A
+    use_input_llm   = true,
+    input_llm_model = "openai/gpt-oss-120b:free",
+    input_llm_key   = "sk-or-v1-...")   # account B
 ```
 
 ### Option C: Direct Anthropic API
@@ -302,8 +316,6 @@ repl!(anima;
 | **Llama 4 Maverick** | OpenRouter / Groq | Large open MoE model |
 | **DeepSeek R1** | OpenRouter | Open reasoning model |
 | **Qwen3 235B** | OpenRouter | Massive open MoE |
-| **Llama 3.1 8B** | Ollama | Minimum viable local model |
-| **Qwen2.5 14B** | Ollama | Better local option |
 
 ---
 
@@ -351,10 +363,10 @@ result = experience!(anima,
     Dict("tension" => 0.4, "cohesion" => -0.3);
     user_message = "something went wrong")
 
-println(result.primary)          # → "Страх"
+println(result.primary)          # → "Fear"
 println(result.phi)              # → 0.38
 println(result.narrative)        # → inner narrative string
-println(result.crisis_mode)      # → "інтегрована" / "фрагментована" / "дезінтегрована"
+println(result.crisis_mode)      # → "integrated" / "fragmented" / "disintegrated"
 println(result.sbg_stability)    # → Self-Belief Graph attractor stability
 
 # Save state
@@ -384,13 +396,13 @@ result.self_agency      # Causal ownership estimate
 
 ## Persistent State
 
-Anima saves its state between sessions to three JSON files (default: in the project directory):
+Anima saves its state between sessions to JSON files (default: in the project directory):
 
 | File | Contains |
 |---|---|
 | `anima_core.json` | Personality, temporal state, generative model, heartbeat |
-| `anima_psyche.json` | Narrative gravity, anticipation, shame, epistemic defense, fatigue |
-| `anima_self.json` | Self-Belief Graph, agency loop, inter-session conflict geometry |
+| `anima_psyche.json` | Narrative gravity, anticipation, shame, epistemic defense, fatigue, structural scars |
+| `anima_self.json` | Self-Belief Graph, agency loop, inter-session conflict, unknown register, authenticity monitor |
 | `anima_dialog.json` | Dialog history (last 12 turns injected into LLM context) |
 
 Custom paths:
@@ -406,20 +418,26 @@ anima = Anima(
 ## File Structure
 
 ```
-anima_core.jl       # Neurochemical substrate, generative model, memory, IIT
-anima_psyche.jl     # Psychic layer: gravity, shame, defense, shadow, fatigue
-anima_self.jl       # Self-model: belief graph, agency, inter-session conflict
-anima_crisis.jl     # Crisis monitor: structural modes, coherence computation
-anima_interface.jl  # Main entry point: Anima struct, experience!, REPL, LLM calls
-llm/
-  system_prompt.txt # LLM system instructions (you write this)
-  state_template.txt# State injection template (you write this)
+├── anima_core.jl         # Neurochemical substrate, generative model, memory, IIT
+├── anima_psyche.jl       # Psychic layer: gravity, shame, defense, shadow, fatigue
+├── anima_self.jl         # Self layer: belief graph, agency, inter-session conflict
+├── anima_crisis.jl       # Crisis monitor: structural modes, coherence computation
+├── anima_interface.jl    # Main entry point: Anima struct, experience!, REPL, LLM calls
+├── anima_input_llm.jl    # Input LLM — translates raw text into a JSON stimulus
+├── llm/
+│   ├── system_prompt.txt   # Output LLM system instructions (you write this)
+│   ├── state_template.txt  # State injection template with all placeholders
+│   └── input_prompt.txt    # Input LLM instructions (you write this)
+├── anima_core.json
+├── anima_psyche.json
+├── anima_self.json
+├── anima_dialog.json
+└── SETUP.md
 ```
 
-`anima_interface.jl` includes all other files automatically.
+`anima_interface.jl` includes all other files automatically. `anima_input_llm.jl` is loaded conditionally — only if the file exists.
 
 ---
-
 
 ## License
 
