@@ -52,7 +52,7 @@ const INPUT_LLM_TIMEOUT = 15
 """
 function input_llm_async(user_msg::String;
                           api_url::String="https://openrouter.ai/api/v1/chat/completions",
-                          model::String="anthropic/claude-3-5-sonnet",
+                          model::String="openai/gpt-oss-120b:free",
                           api_key::String="",
                           prompt_path::String=joinpath(@__DIR__,"llm","input_prompt.txt")
                           )::Channel{Dict{String,Any}}
@@ -166,7 +166,7 @@ end
 """
 function process_input(user_msg::String,
                        text_to_stimulus_fn;
-                       input_model::String="anthropic/claude-3-5-sonnet",
+                       input_model::String="openai/gpt-oss-120b:free",
                        api_url::String="https://openrouter.ai/api/v1/chat/completions",
                        api_key::String="",
                        prompt_path::String=joinpath(@__DIR__,"llm","input_prompt.txt")
