@@ -114,7 +114,7 @@ end
 AnticipatoryConsciousness() = AnticipatoryConsciousness(0.0,0.0,"нейтральна","",0.0,0.0)
 
 const ANTICIP_PATTERNS = Dict(
-    ("Страх","tension")       => ("dread_loop",        -0.7,"Очікую що буде боляче."),
+    ("Страх","tension")       => ("dread_loop",         -0.7,"Очікую що буде боляче."),
     ("Радість","satisfaction")=> ("hope_rising",         0.8,"Відчуваю що щось добре буде."),
     ("Гнів","tension")        => ("conflict_ahead",     -0.5,"Очікую конфлікт."),
     ("Смуток","cohesion")     => ("loss_pending",       -0.6,"Відчуваю що щось відходить."),
