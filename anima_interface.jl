@@ -254,6 +254,20 @@ function Anima(; personality=Personality(), values=ValueSystem(),
             println("  [SELF] Помилка завантаження: $e")
         end
     end
+    # Завантаження anima_latent.json (фаза B — latent_buffer і structural_scars
+    # зберігаються фоновим процесом окремо для уникнення конкурентного запису)
+    _latent_path = replace(psyche_mem_path, "psyche" => "latent")
+    if isfile(_latent_path)
+        try
+            _raw = JSON3.read(read(_latent_path, String))
+            _d   = Dict{String,Any}(String(k)=>v for (k,v) in _raw)
+            haskey(_d,"latent_buffer")    && lb_from_json!(a.latent_buffer,    _d["latent_buffer"])
+            haskey(_d,"structural_scars") && scars_from_json!(a.structural_scars, _d["structural_scars"])
+            println("  [BG] Latent стан завантажено.")
+        catch e
+            println("  [BG] Latent завантаження: $e")
+        end
+    end
     init_session!(a.temporal)
     apply_to_nt!(a.temporal, a.nt)
     # FIX #4: check_session_conflict тепер викликається ПІСЛЯ завантаження self.json,
@@ -361,7 +375,10 @@ function experience!(a::Anima, stimulus_raw::Dict{String,Float64};
     decay_toward_base!(a.emotion_map)
 
     # IIT φ
-    phi = compute_phi(a.iit, vad, t, c)
+    phi = compute_phi(a.iit, vad, t, c,
+                      a.sbg.attractor_stability,
+                      a.sbg.epistemic_trust,
+                      a.interoception.allostatic_load)
 
     # Predictive
     pred = update_predictor!(a.predictor, vad, surprise_sensitivity(a.personality))
@@ -789,7 +806,10 @@ function anima_state_snapshot(a::Anima)
     vad = to_vad(a.nt)
     sg  = belief_geometry(a.sbg)
     t_, _, _, c_ = to_reactors(a.nt)
-    phi = compute_phi(a.iit, vad, t_, c_)
+    phi = compute_phi(a.iit, vad, t_, c_,
+                      a.sbg.attractor_stability,
+                      a.sbg.epistemic_trust,
+                      a.interoception.allostatic_load)
     (
         D                   = Float64(a.nt.dopamine),
         S                   = Float64(a.nt.serotonin),
@@ -872,7 +892,7 @@ function build_state_prompt(template::String, state, user_input::String;
     prompt = replace(prompt, "{hrv}"                  => string(state.hrv))
     prompt = replace(prompt, "{inner_voice}"          => state.inner_voice)
     prompt = replace(prompt, "{narrative_gravity}"    => string(state.narrative_gravity))
-    prompt = replace(prompt, "{inferred_external}"   => string(state.inferred_external))
+    prompt = replace(prompt, "{inferred_external}"    => string(state.inferred_external))
     prompt = replace(prompt, "{shame}"                => string(state.shame))
     prompt = replace(prompt, "{continuity}"           => string(state.continuity))
     prompt = replace(prompt, "{homeostasis_note}"     => state.homeostasis_note)
@@ -881,7 +901,7 @@ function build_state_prompt(template::String, state, user_input::String;
     prompt = replace(prompt, "{flash_count}"          => string(state.flash_count))
     prompt = replace(prompt, "{memory_block}"         => memory_block)
     prompt = replace(prompt, "{user_input}"           => user_input)
-    prompt = replace(prompt, "{want}"               => isempty(want) ? "не визначено" : want)
+    prompt = replace(prompt, "{want}"                 => isempty(want) ? "не визначено" : want)
     # Фази 1-5: замінюємо лише якщо плейсхолдер є в шаблоні
     # Це захищає від "сміття" в промпті якщо state_template.txt не оновлений
     contains(prompt, "{significance_dominant}") &&
@@ -958,7 +978,7 @@ end
 function llm_async(a::Anima, user_msg::String,
                    history::Vector{Dict{String,String}}=Dict{String,String}[];
                    api_url="https://openrouter.ai/api/v1/chat/completions",
-                   model="google/gemini-2.5-pro-exp-03-25",
+                   model="openai/gpt-oss-120b:free",
                    api_key="",
                    is_ollama::Bool=false,
                    want::String="")::Channel{String}
@@ -1029,11 +1049,11 @@ end
 """
 function repl!(a::Anima; use_llm=false,
                llm_url="https://openrouter.ai/api/v1/chat/completions",
-               llm_model="google/gemini-2.5-pro-exp-03-25",
+               llm_model="openai/gpt-oss-120b:free",
                llm_key=get(ENV,"OPENROUTER_API_KEY",""),
                is_ollama::Bool=false,
                use_input_llm=false,
-               input_llm_model="anthropic/claude-3-5-sonnet",
+               input_llm_model="openai/gpt-oss-120b:free",
                input_llm_key=get(ENV,
                    "OPENROUTER_API_KEY_INPUT",
                    get(ENV,"OPENROUTER_API_KEY","")))
@@ -1074,7 +1094,7 @@ function repl!(a::Anima; use_llm=false,
         elseif cmd==":state"
             snap=nt_snapshot(a.nt)
             println("\n  NT: D=$(snap.dopamine) S=$(snap.serotonin) N=$(snap.noradrenaline) → $(snap.levheim_state)")
-            println("  Тіло: $(build_inner_voice(a.body, a.nt, Int(a.crisis.current_mode), compute_phi(a.iit, to_vad(a.nt), to_reactors(a.nt)[1], to_reactors(a.nt)[4])))")
+            println("  Тіло: $(build_inner_voice(a.body, a.nt, Int(a.crisis.current_mode), compute_phi(a.iit, to_vad(a.nt), to_reactors(a.nt)[1], to_reactors(a.nt)[4], a.sbg.attractor_stability, a.sbg.epistemic_trust, a.interoception.allostatic_load)))")
             println("  Серце: $(round(60000.0/a.heartbeat.period_ms,digits=0)) bpm  HRV=$(round(a.heartbeat.hrv,digits=3))")
             println("  Увага: $(a.attention.focus)")
             println("  Сором=$(round(a.shame.level,digits=3))  Continuity=$(round(a.anchor.continuity,digits=3))")
@@ -1175,7 +1195,7 @@ function repl!(a::Anima; use_llm=false,
             # FIX D: витягти прямі факти з повідомлення → SelfBeliefGraph
             dialog_to_belief_signal!(a.sbg, cmd, a.flash_count)
             src_label = input_source_label(input_src)
-            println("\nAnima $src_label [$(r.primary), φ=$(r.phi)]> $(r.narrative)\n")
+            println("\nAnima $src_label [$(r.primary), φ=$(r.phi), ♥=$(round(60000.0/a.heartbeat.period_ms,digits=0))bpm]> $(r.narrative)\n")
             if use_llm
                 print("Anima [LLM, чекаю...]")
                 pending_user_msg = cmd
