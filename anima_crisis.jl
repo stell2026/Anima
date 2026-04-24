@@ -198,7 +198,7 @@ function update_crisis!(cm::CrisisMonitor, sbg::SelfBeliefGraph,
 
     (mode         = cm.current_mode,
      mode_name    = mode_name(cm.current_mode),
-     coherence    = cm.coherence,
+     coherence    = round(cm.coherence, digits=3),
      transitioned = transitioned,
      transition_note = transition_note,
      params       = p,
@@ -356,7 +356,7 @@ function crisis_snapshot(cm::CrisisMonitor)
         mean(cm.coherence_history.data[max(1,end-4):end])
     (mode         = cm.current_mode,
      mode_name    = mode_name(cm.current_mode),
-     coherence    = cm.coherence,
+     coherence    = round(cm.coherence, digits=3),
      coherence_trend = round(recent_coherence,digits=3),
      steps_in_mode= cm.steps_in_mode,
      crisis_count = length(cm.crisis_records),
