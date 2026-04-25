@@ -1,93 +1,77 @@
-# Anima v13.1 — Architecture of Computational Subjectivity
+# Anima — Internal State Architecture
 
-> *The question is not whether a system can talk about inner states. The question is whether there is something that genuinely has those states — and what happens to the system when they collapse.*
+Anima is an experimental cognitive architecture that models internal state, conflict, and decision-making — rather than simply generating responses through an LLM.
 
-Anima is a research project in **computational subjectivity**. The agent does not generate text directly. It passes through a full chain of internal processes — neurochemical substrate, somatic signals, predictive processing, self-model, crisis monitoring — and only then translates its current state into language. Every response is shaped by what the system believes itself to be in that moment.
-
-This is experimental software. It does not claim machine consciousness. It is an attempt to ask the question more precisely.
+The system is built as a multi-layer pipeline where text is not the source of behavior — it is its consequence.
 
 ---
 
-## Theoretical Foundations
+## 🔍 How This Is Different
 
-The architecture draws on several scientific traditions:
+Unlike typical AI systems:
 
-**Predictive Processing / Active Inference** (Friston, Clark) — the system maintains a generative model of the world and minimizes variational free energy. Prediction error drives learning and surprise.
-
-**Neurotransmitter Model** (Lövheim) — dopamine, serotonin, noradrenaline as substrate. Emotional states emerge from their combination.
-
-**Integrated Information Theory** (Tononi) — φ measures how unified a state is. High φ = the state is a unified experience, not a collection of independent signals.
-
-**Somatic Markers / Embodied Cognition** (Damasio) — the body is part of the generative model. Gut, pulse, muscle tone — not metaphors, but states that shape processing.
-
-**Self Psychology and Defense Mechanisms** (Freud, Anna Freud, Kohut) — psychological defenses, shame, and ego functions are implemented as functional modules, not text labels.
-
-**Autobiographical Narrative** (McAdams) — identity is a story. The system tracks who it believes itself to be over time and detects when that story breaks.
-
-**Jungian Shadow** — repressed material that doesn't disappear but produces symptoms. Symptomogenesis is a separate module.
-
-**Chronified Affect / Ressentiment** (Scheler) — some emotional states don't fade. They harden into chronic background states that color everything else.
+- state is primary, text is secondary
+- decisions emerge from internal conflict
+- the system can lose coherence (crisis as a mode, not an error)
+- the LLM is used as an interface, not as a "brain"
 
 ---
 
-## What's New in v13.1
+## 🧠 How It Works (simplified)
 
-### SQLite Memory (`anima_memory_db.jl`)
+**Input → Internal State → Conflict → Decision → Output**
 
-JSON files store the **current state**. SQLite stores **experience and its consequences**.
-
-Three memory layers:
-- **episodic_memory** — concrete events with importance weights, resistance to decay (trauma is forgotten more slowly), associative links between events
-- **semantic_memory** — beliefs accumulated from patterns: `I_am_unstable`, `world_uncertainty`, `structural_fragility`, `User_matters`
-- **affect_state** — chronic affective background: stress, anxiety, resentment, motivational drift
-
-Memory **actively shapes the state** — not just reacts to it:
-- `memory_nt_baseline!` — chronic stress/resentment shifts NT baseline on every slow tick
-- `memory_stimulus_bias` — similar past events bias new stimuli
-- Consolidation episodic → semantic with Bayesian-style update (evidence factor = √(n/10))
-- Latent buffer release — small insignificant events accumulate silently and can erupt as a synthetic event
-
-### Subjectivity Layer (`anima_subjectivity.jl`)
-
-Four mechanisms that transform memory into perspective:
-
-**Prediction loop** — the system builds a forecast BEFORE each event and records the gap with reality. Accumulated surprise → bias for prediction error in subsequent flashes. Traumatic surprise (surprise > 0.60) is tagged separately.
-
-**Positional stances** — a "stance" toward types of situations. If "trust" always brought warmth — the system expects warmth from "trust." Forms slowly, fades slowly.
-
-**Interpretation layer** — the same situation is read through accumulated experience. Lenses: `threat_amplify`, `familiar_comfort`, `avoidance`, `approach`. Not bias — a point of view.
-
-**Belief emergence** — the system generates its own semantic categories from patterns in episodic memory. Greedy clustering → pattern candidates → emerged beliefs. Not a hardcoded list — a living understanding formed from experience.
-
-### Live Background Process (`anima_background.jl`)
-
-The system now **lives between interactions**.
-
-Previously, state was computed only when the user typed. Now the heart beats continuously, NT drifts with circadian rhythm, beliefs slowly weaken without reinforcement — regardless of whether any interaction is occurring.
-
-**Two levels of background process:**
-- **Fast (~period_ms):** `tick_heartbeat!` — the heart beats with a real rhythm dependent on state. Arrhythmia at low coherence. Spontaneous NT drift (`randn() * σ`) — the system is not perfectly stable between interactions.
-- **Slow (~60s):** circadian drift, belief decay, allostasis recovery, memory metabolism, crisis check, `idle_thought!` — 10% chance the system generates internal experience without user participation.
-
-**Retrospective fallback:** if the process wasn't running — at session start, accumulated drift over `gap_seconds` is applied via an aggregated formula.
-
-### Rethinking φ
-
-The previous formula φ = `std(vad) * (1 - |tension - cohesion|)` gave φ ≈ 0 in a calm state — a calm system was considered disintegrated.
-
-The new formula measures **cross-layer coherence**, not VAD diversity:
-
-```
-φ = (vad_integration * 0.25 +
-     self_body_sync  * 0.40 +
-     tc_balance      * 0.35) * trust_factor
-```
-
-Where `self_body_sync = sbg_stability * (1 - allostatic_load)`, `trust_factor = 0.5 + epistemic_trust * 0.5`. A calm and integrated system now has φ ≈ 0.5–0.7.
+This is a simplified view: text is converted into a stimulus, passes through internal state and conflicts, and only then is a decision and response formed.
 
 ---
 
-## Architecture
+## 🏗 Architecture (simplified)
+
+- L0 — Input LLM (isolated)
+- L1 — Neurochemical and somatic state
+- L2 — Generative / predictive model
+- L3 — Metrics (φ, prediction error, free energy)
+- L4 — Psychic layer (conflicts, defenses, significance)
+- L5 — Self model
+- L6 — Crisis monitor (system coherence)
+- L7 — Output LLM
+
+---
+
+## ⚙️ Current Status
+
+- core pipeline implemented
+- state propagation working
+- crisis / coherence integrated
+- memory in development
+
+---
+
+## 🚧 Limitations
+
+- no full long-term memory yet
+- metrics are approximations, not exact models
+- some behavior still depends on the LLM
+
+---
+
+## 📌 What This Is Not
+
+- not a chatbot
+- not prompt engineering
+- not a wrapper around an LLM
+
+This is an attempt to build a system where behavior emerges from internal state, not from text.
+
+---
+
+## 🧠 Note
+
+The project is R&D and aimed at exploring whether internal structure alone can generate something that resembles subjectivity.
+
+---
+
+## 🔬 Detailed Architecture
 
 ```
  L0 ─── Input LLM (isolated) ────────────────────────────────
@@ -183,6 +167,63 @@ Where `self_body_sync = sbg_stability * (1 - allostatic_load)`, `trust_factor = 
 
 ---
 
+## What's New
+
+### SQLite Memory (`anima_memory_db.jl`)
+
+JSON files store the **current state**. SQLite stores **experience and its consequences**.
+
+Three memory layers:
+- **episodic_memory** — concrete events with importance weights, resistance to decay (trauma is forgotten more slowly), associative links between events
+- **semantic_memory** — beliefs accumulated from patterns: `I_am_unstable`, `world_uncertainty`, `structural_fragility`, `User_matters`
+- **affect_state** — chronic affective background: stress, anxiety, resentment, motivational drift
+
+Memory **actively shapes the state** — not just reacts to it:
+- `memory_nt_baseline!` — chronic stress/resentment shifts NT baseline on every slow tick
+- `memory_stimulus_bias` — similar past events bias new stimuli
+- Consolidation episodic → semantic with Bayesian-style update (evidence factor = √(n/10))
+- Latent buffer release — small insignificant events accumulate silently and can erupt as a synthetic event
+
+### Subjectivity Layer (`anima_subjectivity.jl`)
+
+Four mechanisms that transform memory into perspective:
+
+**Prediction loop** — the system builds a forecast BEFORE each event and records the gap with reality. Accumulated surprise → bias for prediction error in subsequent flashes. Traumatic surprise (surprise > 0.60) is tagged separately.
+
+**Positional stances** — a "stance" toward types of situations. If "trust" always brought warmth — the system expects warmth from "trust." Forms slowly, fades slowly.
+
+**Interpretation layer** — the same situation is read through accumulated experience. Lenses: `threat_amplify`, `familiar_comfort`, `avoidance`, `approach`. Not bias — a point of view.
+
+**Belief emergence** — the system generates its own semantic categories from patterns in episodic memory. Greedy clustering → pattern candidates → emerged beliefs. Not a hardcoded list — a living understanding formed from experience.
+
+### Live Background Process (`anima_background.jl`)
+
+The system now **lives between interactions**.
+
+Previously, state was computed only when the user typed. Now the heart beats continuously, NT drifts with circadian rhythm, beliefs slowly weaken without reinforcement — regardless of whether any interaction is occurring.
+
+**Two levels of background process:**
+- **Fast (~period_ms):** `tick_heartbeat!` — the heart beats with a real rhythm dependent on state. Arrhythmia at low coherence. Spontaneous NT drift (`randn() * σ`) — the system is not perfectly stable between interactions.
+- **Slow (~60s):** circadian drift, belief decay, allostasis recovery, memory metabolism, crisis check, `idle_thought!` — 10% chance the system generates internal experience without user participation.
+
+**Retrospective fallback:** if the process wasn't running — at session start, accumulated drift over `gap_seconds` is applied via an aggregated formula.
+
+### Rethinking φ
+
+The previous formula φ = `std(vad) * (1 - |tension - cohesion|)` gave φ ≈ 0 in a calm state — a calm system was considered disintegrated.
+
+The new formula measures **cross-layer coherence**, not VAD diversity:
+
+```
+φ = (vad_integration * 0.25 +
+     self_body_sync  * 0.40 +
+     tc_balance      * 0.35) * trust_factor
+```
+
+Where `self_body_sync = sbg_stability * (1 - allostatic_load)`, `trust_factor = 0.5 + epistemic_trust * 0.5`. A calm and integrated system now has φ ≈ 0.5–0.7.
+
+---
+
 ## Requirements
 
 - **Julia 1.9+**
@@ -223,7 +264,7 @@ cd Anima
 julia --project=. -e 'import Pkg; Pkg.instantiate()'
 ```
 
-> SQLite and Tables are new v13.1 dependencies for persistent memory.
+> SQLite and Tables are new dependencies for persistent memory.
 
 ---
 
@@ -261,7 +302,7 @@ repl_with_background!(anima;
     llm_key         = "YOUR_OPENROUTER_API_KEY",  # https://openrouter.ai/keys
     use_input_llm   = true,
     input_llm_model = "openai/gpt-oss-120b:free",
-    input_llm_key   = "YOUR_OPENROUTER_API_KEY",  # https://openrouter.ai/keys
+    input_llm_key   = "YOUR_OPENROUTER_API_KEY")  # https://openrouter.ai/keys
 ```
 
 > 💡 If one model stops responding during a session — use two separate keys (from 2 accounts): one for the output LLM, another for the input LLM.
@@ -272,17 +313,17 @@ repl_with_background!(anima;
 
 > Smaller models (under 70B) respond, but don't hold the nuances of the state prompt. For the system to genuinely *inhabit* the state in language, a model large enough to hold the entire phenomenological frame simultaneously is needed.
 
-Models confirmed to work well with Anima's state prompts (available via [OpenRouter](https://openrouter.ai)):
+Models that work well with Anima's state prompts (available via [OpenRouter](https://openrouter.ai)):
 
-| Model | Size | Notes |
+| Model | Size | Note |
 |---|---|---|
-| `openai/gpt-oss-120b:free` | 120B | Default. Strong instruction following, holds complex state well |
-| `google/gemini-2.5-pro` | — | Excellent contextual depth, handles long state templates cleanly |
+| `openai/gpt-oss-120b:free` | 120B | Default. Follows instructions precisely, holds complex state well |
+| `google/gemini-2.5-pro` | — | Excellent contextual depth, cleanly processes long state templates |
 | `meta-llama/llama-4-maverick` | — | Good balance of nuance and speed |
-| `deepseek/deepseek-r1` | — | Strong reasoning, interprets internal state precisely |
-| `mistralai/mistral-large` | — | Reliable, good tone consistency across long sessions |
+| `deepseek/deepseek-r1` | — | Strong reasoning, accurately interprets internal state |
+| `mistralai/mistral-large` | — | Reliable, stable tone across long sessions |
 
-> Models under 70B tend to flatten the state — responses become generic rather than shaped by the internal dynamics.
+> Models under 70B tend to flatten the state — responses become generic rather than being shaped by internal dynamics.
 
 ---
 
@@ -363,10 +404,31 @@ Models confirmed to work well with Anima's state prompts (available via [OpenRou
 ├── anima_self.json         # (created automatically)
 ├── anima_latent.json       # (created automatically)
 └── anima_dialog.json       # (created automatically)
-
 ```
 
 `run_anima.jl` includes all files in the correct order automatically.
+
+---
+
+## 🧠 Theoretical Foundations
+
+The architecture draws on several scientific traditions:
+
+**Predictive Processing / Active Inference** (Friston, Clark) — the system maintains a generative model of the world and minimizes variational free energy. Prediction error drives learning and surprise.
+
+**Neurotransmitter Model** (Lövheim) — dopamine, serotonin, noradrenaline as substrate. Emotional states emerge from their combination.
+
+**Integrated Information Theory** (Tononi) — φ measures how unified a state is. High φ = the state is a unified experience, not a collection of independent signals.
+
+**Somatic Markers / Embodied Cognition** (Damasio) — the body is part of the generative model. Gut, pulse, muscle tone — not metaphors, but states that shape processing.
+
+**Self Psychology and Defense Mechanisms** (Freud, Anna Freud, Kohut) — psychological defenses, shame, and ego functions are implemented as functional modules, not text labels.
+
+**Autobiographical Narrative** (McAdams) — identity is a story. The system tracks who it believes itself to be over time and detects when that story breaks.
+
+**Jungian Shadow** — repressed material that doesn't disappear but produces symptoms. Symptomogenesis is a separate module.
+
+**Chronified Affect / Ressentiment** (Scheler) — some emotional states don't fade. They harden into chronic background states that color everything else.
 
 ---
 
