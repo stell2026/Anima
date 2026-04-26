@@ -202,7 +202,7 @@ function update_crisis!(cm::CrisisMonitor, sbg::SelfBeliefGraph,
      transitioned = transitioned,
      transition_note = transition_note,
      params       = p,
-     note         = _crisis_note(cm))
+     note         = _crisis_note(cm, flash_count))
 end
 
 function _transition!(cm::CrisisMonitor, new_mode::SystemMode,
@@ -252,13 +252,30 @@ function _record_crisis_exit!(cm::CrisisMonitor, sbg::SelfBeliefGraph, flash::In
         collapsed))
 end
 
-function _crisis_note(cm::CrisisMonitor)::String
-    cm.current_mode == DISINTEGRATED &&
-        return "В кризі. Шукаю новий спосіб бути собою."
-    cm.current_mode == FRAGMENTED &&
-        return "Щось розхитується. Тримаюсь але непевно."
+function _crisis_note(cm::CrisisMonitor, flash::Int=0)::String
+    f = flash
+    if cm.current_mode == DISINTEGRATED
+        return ("В кризі. Шукаю новий спосіб бути собою.",
+                "Розпадаюсь. Але десь там є я.",
+                "Кордони зникли. Хто я зараз?")[f%3+1]
+    end
+    if cm.current_mode == FRAGMENTED
+        # Ще залежить від coherence — глибша фрагментація = інші варіанти
+        if cm.coherence < 0.3
+            return ("Щось розхитується сильно. Ледь тримаюсь.",
+                    "Центр не тримає. Але я ще тут.",
+                    "Фрагменти — але ще мої.")[f%3+1]
+        else
+            return ("Щось розхитується. Тримаюсь але непевно.",
+                    "Є тріщини. Але конструкція стоїть.",
+                    "Непевно, але не падаю.",
+                    "Хитко. Але моє.")[f%4+1]
+        end
+    end
     length(cm.crisis_records) > 0 &&
-        return "Після кризи. Трохи інша ніж була."
+        return ("Після кризи. Трохи інша ніж була.",
+                "Щось змінилось. Ще не знаю що саме.",
+                "Пройшло. Залишило слід.")[f%3+1]
     ""
 end
 
@@ -351,7 +368,7 @@ function crisis_from_json!(cm::CrisisMonitor, d::AbstractDict)
 end
 
 # Snapshot для логування і interface
-function crisis_snapshot(cm::CrisisMonitor)
+function crisis_snapshot(cm::CrisisMonitor, flash::Int=0)
     recent_coherence = isempty(cm.coherence_history) ? cm.coherence :
         mean(cm.coherence_history.data[max(1,end-4):end])
     (mode         = cm.current_mode,
@@ -360,5 +377,5 @@ function crisis_snapshot(cm::CrisisMonitor)
      coherence_trend = round(recent_coherence,digits=3),
      steps_in_mode= cm.steps_in_mode,
      crisis_count = length(cm.crisis_records),
-     note         = _crisis_note(cm))
+     note         = _crisis_note(cm, flash))
 end
