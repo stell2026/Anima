@@ -648,6 +648,10 @@ end
 function subj_emerge_beliefs!(subj::SubjectivityEngine, flash::Int)
     db  = subj.mem.db
 
+    # Guard: оновлюємо _emerged_cache_flash щоб фоновий процес не викликав
+    # цю функцію повторно для того самого flash_count (спам переконань)
+    subj._emerged_cache_flash = flash
+
     # ── Збираємо вікно episodic ────────────────────────────────────────────────
     rows = Tables.rowtable(DBInterface.execute(db, """
     SELECT arousal, valence, prediction_error, tension, emotion, weight
@@ -824,6 +828,11 @@ function _promote_to_belief!(subj::SubjectivityEngine,
     avg_w = cl[:sum_w] / max(cl[:n], 1)
     activation_thr = SUBJ_PATTERN_CLUSTER_THR * (1.0 + (1.0 - avg_w) * 0.5)
 
+    # Перевіряємо чи переконання вже існує (INSERT OR IGNORE не повідомляє)
+    existing = DBInterface.execute(db,
+        "SELECT 1 FROM emerged_beliefs WHERE key = ?", (key,))
+    is_new = isempty(Tables.rowtable(existing))
+
     DBInterface.execute(db, """
     INSERT OR IGNORE INTO emerged_beliefs
         (key, belief_type, centroid_arousal, centroid_valence, centroid_tension,
@@ -839,7 +848,8 @@ function _promote_to_belief!(subj::SubjectivityEngine,
     UPDATE pattern_candidates SET promoted = 1 WHERE id = ?
     """, (pattern_id,))
 
-    println("  [SUBJ] Нове переконання: \"$(key)\" ($(belief_type), val=$(round(valence_bias, digits=2)))")
+    # Виводимо тільки якщо справді нове
+    is_new && println("  [SUBJ] Нове переконання: \"$(key)\" ($(belief_type), val=$(round(valence_bias, digits=2)))")
 
     # Переконання народжене з травми → впливає на semantic_memory.
     # ВАЖЛИВО: ключ "EB_structural_fragility" — НЕ "structural_fragility".
