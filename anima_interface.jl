@@ -115,6 +115,22 @@ function check_authenticity!(am::AuthenticityMonitor,
         (am.authenticity_drift = clamp01(am.authenticity_drift - 0.03))
     am.authenticity_drift > 0.4 && push!(flags, "authenticity_drift")
 
+    # ── Евристика 4: state_narrative_mismatch ────────────────────────────
+    # Якщо phi > 0.6 і etrust > 0.6 але named = негативний стан — розрив.
+    # Якщо phi < 0.3 і etrust < 0.4 але narrative каже "спокій" — теж розрив.
+    # Це саме та ситуація: Довіра + phi=0.82 + "не можу собі довіряти".
+    high_integration = phi > 0.6 && epistemic_trust > 0.6
+    negative_state   = crisis_mode ∈ ("дезінтегрована", "фрагментована") &&
+                       coherence < 0.45
+    if high_integration && !negative_state && am.fabrication_risk < 0.3
+        # Система стабільна — знижуємо drift якщо він накопичився
+        am.authenticity_drift = max(0.0, am.authenticity_drift - 0.05)
+    elseif !high_integration && coherence < 0.35
+        # Система нестабільна але може говорити більше ніж відчуває
+        am.authenticity_drift = clamp01(am.authenticity_drift + 0.08)
+        push!(flags, "state_narrative_mismatch")
+    end
+
     am.last_flags = flags
 
     note = if am.fabrication_risk > 0.55
@@ -374,11 +390,12 @@ function experience!(a::Anima, stimulus_raw::Dict{String,Float64};
     learn!(a.emotion_map, primary, vad)
     decay_toward_base!(a.emotion_map)
 
-    # IIT φ
-    phi = compute_phi(a.iit, vad, t, c,
-                      a.sbg.attractor_stability,
-                      a.sbg.epistemic_trust,
-                      a.interoception.allostatic_load)
+    # IIT φ_prior — prior beliefs про себе ДО повного досвіду
+    phi_prior = compute_phi(a.iit, vad, t, c,
+                            a.sbg.attractor_stability,
+                            a.sbg.epistemic_trust,
+                            a.interoception.allostatic_load)
+    phi = phi_prior  # alias для ранніх модулів
 
     # Predictive
     pred = update_predictor!(a.predictor, vad, surprise_sensitivity(a.personality))
@@ -471,7 +488,20 @@ function experience!(a::Anima, stimulus_raw::Dict{String,Float64};
     # [B3] Interoception
     intero_snap = update_interoception!(a.interoception, a.body, a.gen_model.prior_mu)
 
-    # [T2] Narrative Gravity
+    # ── φ_posterior — ПІСЛЯ VFE і interoception ──────────────────────────
+    phi_posterior = compute_phi_posterior(a.iit, vad,
+                                          a.sbg.epistemic_trust,
+                                          a.blanket.integrity,
+                                          vfe_r.vfe,
+                                          Float64(intero_snap.intero_error))
+    phi = phi_posterior  # решта pipeline використовує posterior
+
+    # φ feedback loop
+    phi_delta = phi_posterior - phi_prior
+    if abs(phi_delta) > 0.05
+        trust_correction = clamp(phi_delta * 0.08, -0.04, 0.04)
+        a.sbg.epistemic_trust = clamp(a.sbg.epistemic_trust + trust_correction, 0.0, 1.0)
+    end
     push_event!(a.narrative_gravity, named, intensity,
                 Float64(sig_total(a.significance)), phi, a.flash_count,
                 intensity*(vad[1]>0 ? 1.0 : -1.0))
@@ -564,6 +594,9 @@ function experience!(a::Anima, stimulus_raw::Dict{String,Float64};
         primary_raw   = primary,
         intensity     = intensity,
         phi           = phi,
+        phi_prior     = phi_prior,
+        phi_posterior = phi_posterior,
+        phi_delta     = phi_posterior - phi_prior,
         vad           = vad,
         tension       = t_adj,
         arousal       = a_r,
@@ -596,13 +629,13 @@ function experience!(a::Anima, stimulus_raw::Dict{String,Float64};
         anticip_type  = ac_snap.atype,
         anticip_strength=ac_snap.strength,
         anticip_note  = ac_snap.note,
-        solom         = solom_snapshot(a.solomonoff),
+        solom         = solom_snapshot(a.solomonoff, named, a.flash_count),
         shame         = shame_snapshot(a.shame),
         ep_defense    = ep_def,
         symptom       = symptom,
         chronified    = ca_snapshot(a.chronified),
         significance  = (total=Float64(sig_total(a.significance)),
-                         dominant=sig_dominant(a.significance),note=sig_note(a.significance)),
+                         dominant=sig_dominant(a.significance),note=sig_note(a.significance, a.flash_count)),
         sig_layer     = sl_snap,
         goal_conflict = gc_snap,
         latent_buffer = lb_snap,
@@ -630,7 +663,7 @@ function experience!(a::Anima, stimulus_raw::Dict{String,Float64};
         narrative     = build_narrative(a, named, t_adj, a_r, s_adj, c_adj,
                                          phi, ac_snap, vfe_r.vfe, grav_d.field,
                                          intero_snap, anchor_snap, homeo_snap,
-                                         self_snap, crisis_snap),
+                                         self_snap, crisis_snap, am_snap),
     )
 
     log_flash(result)
@@ -650,7 +683,8 @@ function build_narrative(a::Anima, named::String, t::Float64, ar::Float64,
                           s::Float64, c::Float64, phi::Float64,
                           ac_snap, vfe::Float64, grav_field,
                           intero_snap, anchor_snap, homeo_snap,
-                          self_snap=nothing, crisis_snap=nothing)::String
+                          self_snap=nothing, crisis_snap=nothing,
+                          am_snap=nothing)::String
     base = t>0.7 ? "Відчуваю напругу. $named." : t<0.2 ? "Спокійно. $named." : "$named."
     notes = String[]
     !isempty(a.temporal.subjective_note)        && push!(notes, a.temporal.subjective_note)
@@ -658,26 +692,58 @@ function build_narrative(a::Anima, named::String, t::Float64, ar::Float64,
     !isempty(String(grav_field.note))           && push!(notes, String(grav_field.note))
     !isempty(ac_snap.note)                      && push!(notes, ac_snap.note)
     vfe > 0.5                                   && push!(notes, vfe_note(vfe))
-    phi > 0.3 && !isempty(String(a.solomonoff.best===nothing ? "" : "Знаю: '$(a.solomonoff.best.pattern)'.")) &&
-        push!(notes, "Знаю: '$(a.solomonoff.best.pattern)'.")
+    # Solomonoff — контекстуально релевантний патерн
+    # Не просто best — а той що резонує з поточним станом і нещодавно підтверджувався
+    ctx_hyp = contextual_best(a.solomonoff, named, a.flash_count)
+    if !isnothing(ctx_hyp) && hyp_conf(ctx_hyp) > 0.3
+        push!(notes, "Знаю: '$(ctx_hyp.pattern)'.")
+    end
     !isempty(ca_note(a.chronified))             && push!(notes, ca_note(a.chronified))
-    !isempty(sig_note(a.significance))          && push!(notes, sig_note(a.significance))
+    !isempty(sig_note(a.significance, a.flash_count)) && push!(notes, sig_note(a.significance, a.flash_count))
     !isempty(String(intero_snap.note))          && push!(notes, String(intero_snap.note))
     anchor_snap.continuity < 0.4               && push!(notes, String(anchor_snap.note))
     homeo_snap.pressure > 0.3                  && push!(notes, homeostasis_note(a.homeostasis))
-    # FIX C: build_inner_voice замість somatic_marker
-    sm = build_inner_voice(a.body, a.nt, Int(a.crisis.current_mode), phi)
+    sm = build_inner_voice(a.body, a.nt, Int(a.crisis.current_mode), phi, a.flash_count)
     sm != "тіло нейтральне"                    && push!(notes, uppercase(safe_first(sm,1))*sm[nextind(sm,1):end]*".")
-    !isempty(shame_note(a.shame))              && push!(notes, shame_note(a.shame))
-    # Crisis and self notes
+    !isempty(shame_note(a.shame, a.flash_count)) && push!(notes, shame_note(a.shame, a.flash_count))
+
+    # Crisis and self notes — з фільтрацією через AuthenticityMonitor
+    # Якщо система стабільна (phi > 0.6, etrust > 0.6) але self/crisis notes
+    # містять самозаперечення ("не можу собі довіряти", "розпадаюсь") —
+    # вони фільтруються. Не замовчування — а точність:
+    # "Не можу собі довіряти" при etrust=0.81 є narrative artifact, не стан.
+    stable_state = phi > 0.55 && a.sbg.epistemic_trust > 0.55
+    am_ok = isnothing(am_snap) || am_snap.authenticity_drift < 0.35
+
     if !isnothing(crisis_snap)
-        !isempty(String(crisis_snap.note)) && push!(notes, String(crisis_snap.note))
+        note_c = String(crisis_snap.note)
+        # Фільтруємо кризові нотатки якщо стан стабільний і monitor каже ок
+        if !isempty(note_c) && !(stable_state && am_ok)
+            push!(notes, note_c)
+        elseif !isempty(note_c) && stable_state
+            # Стабільний стан але є crisis note — пом'якшуємо
+            push!(notes, note_c)  # залишаємо — crisis_snap вже відображає реальний mode
+        end
     end
+
     if !isnothing(self_snap)
-        !isempty(String(self_snap.self_pred.note)) && push!(notes, String(self_snap.self_pred.note))
-        !isempty(String(self_snap.agency.note))    && push!(notes, String(self_snap.agency.note))
+        pred_note   = String(self_snap.self_pred.note)
+        agency_note = String(self_snap.agency.note)
+
+        # Self_pred notes що суперечать стабільному стану — фільтруємо
+        contradicts_state = stable_state &&
+            any(s -> occursin(s, lowercase(pred_note)),
+                ["не можу", "не довіряю", "розпадаюсь", "зникаю"])
+        !isempty(pred_note) && !contradicts_state && push!(notes, pred_note)
+        !isempty(agency_note)                     && push!(notes, agency_note)
     end
-    isempty(notes) ? base : base*" "*join(filter(!isempty,notes)," ")
+
+    # Якщо authenticity_drift > 0.4 — додаємо примітку про неточність
+    if !isnothing(am_snap) && am_snap.authenticity_drift > 0.4
+        push!(notes, "Важко сказати — моє чи зовнішнє.")
+    end
+
+    isempty(notes) ? base : base*" "*join(filter(!isempty, notes), " ")
 end
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -692,9 +758,14 @@ function log_flash(r)
     sym_str  = isnothing(r.symptom) ? "" : " 💊"
     def_str  = isnothing(r.defense) ? "" : " 🛡$(r.defense.mechanism)"
 
-    @printf("[#%04d] %-18s D=%.2f S=%.2f N=%.2f ▸%-11s φ=%.2f\n",
+    phi_str = if hasfield(typeof(r), :phi_prior) && hasfield(typeof(r), :phi_posterior)
+        @sprintf("%.2f(%.2f→%.2f)", r.phi, r.phi_prior, r.phi_posterior)
+    else
+        @sprintf("%.2f", r.phi)
+    end
+    @printf("[#%04d] %-18s D=%.2f S=%.2f N=%.2f ▸%-11s φ=%s\n",
         r.flash_count, r.primary, r.nt.dopamine, r.nt.serotonin,
-        r.nt.noradrenaline, r.levheim, r.phi)
+        r.nt.noradrenaline, r.levheim, phi_str)
     @printf("       VFE=%.2f[%s] BPM=%.0f HRV=%.2f Attn=%.2f G=%.2f ↑%.2f H=%.2f%s%s%s\n",
         r.vfe, r.ai_drive[1:min(3,end)], r.heartbeat.bpm, r.heartbeat.hrv,
         r.attention.radius, r.gravity_total, r.anticip_strength,
@@ -801,15 +872,16 @@ end
 """
 function anima_state_snapshot(a::Anima)
     hb  = a.heartbeat
-    cs  = crisis_snapshot(a.crisis)
-    emo = nt_snapshot(a.nt)
+    cs  = crisis_snapshot(a.crisis, a.flash_count)
     vad = to_vad(a.nt)
     sg  = belief_geometry(a.sbg)
     t_, _, _, c_ = to_reactors(a.nt)
-    phi = compute_phi(a.iit, vad, t_, c_,
-                      a.sbg.attractor_stability,
-                      a.sbg.epistemic_trust,
-                      a.interoception.allostatic_load)
+    _vfe_snap = compute_vfe(a.gen_model, vad)
+    phi = compute_phi_posterior(a.iit, vad,
+                                a.sbg.epistemic_trust,
+                                a.blanket.integrity,
+                                _vfe_snap.vfe,
+                                a.interoception.intero_error)
     (
         D                   = Float64(a.nt.dopamine),
         S                   = Float64(a.nt.serotonin),
@@ -823,7 +895,7 @@ function anima_state_snapshot(a::Anima)
         attn                = round(Float64(a.attention.radius), digits=3),
         crisis_mode         = String(cs.mode_name),
         emotion_label       = String(levheim_state(a.nt)),
-        inner_voice         = build_inner_voice(a.body, a.nt, Int(a.crisis.current_mode), phi),
+        inner_voice         = build_inner_voice(a.body, a.nt, Int(a.crisis.current_mode), phi, a.flash_count),
         narrative_gravity   = round(Float64(compute_field(a.narrative_gravity, a.flash_count).total), digits=3),
         inferred_external   = round(Float64(a.blanket.inferred_external), digits=3),
         flash_count         = a.flash_count,
@@ -1093,12 +1165,14 @@ function repl!(a::Anima; use_llm=false,
 
         elseif cmd==":state"
             snap=nt_snapshot(a.nt)
+            _vad_s=to_vad(a.nt); _vfe_s=compute_vfe(a.gen_model,_vad_s)
+            _phi_s=compute_phi_posterior(a.iit, _vad_s, a.sbg.epistemic_trust,
+                       a.blanket.integrity, _vfe_s.vfe, a.interoception.intero_error)
             println("\n  NT: D=$(snap.dopamine) S=$(snap.serotonin) N=$(snap.noradrenaline) → $(snap.levheim_state)")
-            println("  Тіло: $(build_inner_voice(a.body, a.nt, Int(a.crisis.current_mode), compute_phi(a.iit, to_vad(a.nt), to_reactors(a.nt)[1], to_reactors(a.nt)[4], a.sbg.attractor_stability, a.sbg.epistemic_trust, a.interoception.allostatic_load)))")
-            println("  Серце: $(round(60000.0/a.heartbeat.period_ms,digits=0)) bpm  HRV=$(round(a.heartbeat.hrv,digits=3))")
-            println("  Увага: $(a.attention.focus)")
-            println("  Сором=$(round(a.shame.level,digits=3))  Continuity=$(round(a.anchor.continuity,digits=3))")
-            println("  $(sig_note(a.significance))")
+            println("  ♥ $(round(60000.0/a.heartbeat.period_ms,digits=0))bpm  HRV=$(round(a.heartbeat.hrv,digits=3))  coh=$(round(a.crisis.coherence,digits=3))")
+            println("  Тіло: $(build_inner_voice(a.body, a.nt, Int(a.crisis.current_mode), _phi_s, a.flash_count))")
+            println("  Увага: $(a.attention.focus) | Shame=$(round(a.shame.level,digits=3))  Continuity=$(round(a.anchor.continuity,digits=3))")
+            println("  $(sig_note(a.significance, a.flash_count))")
             println("  $(moral_note(a.moral))\n")
 
         elseif cmd==":vfe"
@@ -1138,7 +1212,7 @@ function repl!(a::Anima; use_llm=false,
             println("  Last self: $(ea.last_self)\n")
 
         elseif cmd==":solom"
-            s=solom_snapshot(a.solomonoff)
+            s=solom_snapshot(a.solomonoff, levheim_state(a.nt), a.flash_count)
             println("\n  $(s.insight)")
             println("  World complexity=$(s.complexity) Hypotheses=$(s.count)\n")
 
@@ -1157,7 +1231,7 @@ function repl!(a::Anima; use_llm=false,
             println("  Agency confidence=$(round(a.agency.agency_confidence,digits=3))  causal_ownership=$(round(a.agency.causal_ownership,digits=3))\n")
 
         elseif cmd==":crisis"
-            cs=crisis_snapshot(a.crisis)
+            cs=crisis_snapshot(a.crisis, a.flash_count)
             println("\n  Crisis Monitor:")
             println("  Mode: $(cs.mode_name)  Coherence=$(cs.coherence)  Steps in mode=$(cs.steps_in_mode)")
             println("  $(cs.note)")
