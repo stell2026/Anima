@@ -2,6 +2,7 @@
 ![Research Phase](https://img.shields.io/badge/Phase-Experimental--v13-007ec6?style=flat-square)
 ![Author](https://img.shields.io/badge/Author-Stell-lightgrey?style=flat-square)
 ![Framework](https://img.shields.io/badge/Methodology-Active--Inference-green?style=flat-square)
+![Hardware](https://img.shields.io/badge/Tested--on-MacBook--Pro--i7-gold?style=flat-square&logo=apple) ![RAM](https://img.shields.io/badge/RAM-16GB-gold?style=flat-square)
 ![License](https://img.shields.io/badge/License-Non--Commercial-red?style=flat-square)
 
 # Anima — Internal State Architecture                           🌀
