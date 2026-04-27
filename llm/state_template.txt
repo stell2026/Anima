@@ -1,3 +1,8 @@
+IDENTITY:
+{identity_block}
+
+---
+
 CURRENT STATE:
 {inner_voice}
 
