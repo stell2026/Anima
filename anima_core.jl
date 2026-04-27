@@ -695,12 +695,23 @@ ExistentialAnchor() = ExistentialAnchor(
     0.7, 0.6, "невідома", BoundedQueue{String}(10))
 
 function update_anchor!(ea::ExistentialAnchor, self_desc::String,
-                         flash_count::Int, gap_seconds::Float64, phi::Float64)
+                         flash_count::Int, gap_seconds::Float64, phi::Float64,
+                         gut_feeling::Float64=0.5, hrv::Float64=0.5)
     enqueue!(ea.identity_thread, self_desc)
     ea.last_self   = self_desc
     gap_decay      = exp(-gap_seconds / (86400*7))
     ea.continuity  = clamp01(gap_decay*0.6 + phi*0.3 + 0.1)
-    ea.groundedness= clamp01(ea.groundedness*0.95 + min(flash_count/100,0.3)*0.05 - (1-gap_decay)*0.1)
+    # Groundedness = тілесна присутність + нарощений досвід + phi
+    # gut_feeling  — соматичний маркер "я тут" (з EmbodiedState)
+    # hrv          — парасимп. присутність: вищий HRV = більш "заземлена"
+    # flash_count  — нарощений досвід (але з насиченням після ~50 флешів)
+    # gap_decay    — тривала відсутність знижує
+    somatic_ground = gut_feeling * 0.5 + hrv * 0.3 + phi * 0.2
+    flash_credit   = clamp(flash_count / 80.0, 0.0, 0.5)   # насичення при ~80 флешах
+    gap_penalty    = (1.0 - gap_decay) * 0.08
+    target_ground  = clamp01(somatic_ground * 0.6 + flash_credit * 0.3 + 0.1 - gap_penalty)
+    # Інерція 0.92 — groundedness повільно наближається до цільового значення
+    ea.groundedness = clamp01(ea.groundedness * 0.92 + target_ground * 0.08)
     (continuity   = round(ea.continuity,   digits=3),
      groundedness = round(ea.groundedness, digits=3),
      note = ea.continuity>0.7 ? "Я та сама. Нитка не перервалась." :
