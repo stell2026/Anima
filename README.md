@@ -1,5 +1,5 @@
 ![Julia](https://img.shields.io/badge/Julia-1.9+-9558B2?style=flat-square&logo=julia)
-![Research Phase](https://img.shields.io/badge/Phase-Experimental--v14.0-blueviolet?style=flat-square)
+![Research Phase](https://img.shields.io/badge/Phase-Experimental--v13.0-007ec6?style=flat-square)
 ![Author](https://img.shields.io/badge/Author-Stell-lightgrey?style=flat-square)
 ![Framework](https://img.shields.io/badge/Methodology-Active--Inference-green?style=flat-square)
 ![License](https://img.shields.io/badge/License-Non--Commercial-red?style=flat-square)
