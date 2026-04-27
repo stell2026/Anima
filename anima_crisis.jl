@@ -51,8 +51,13 @@ function compute_coherence(sbg::SelfBeliefGraph, mb::MarkovBlanket,
     model_coherence     = safe_nan(1.0 - vfe)
     integration         = safe_nan(phi)
 
-    # Minimum — найслабша ланка визначає coherence
-    raw = minimum([belief_coherence, boundary_coherence, model_coherence, integration])
+    components = [belief_coherence, boundary_coherence, model_coherence, integration]
+
+    # Зважений мінімум: мінімум впливає але не домінує одноосібно.
+    # Чистий minimum при одному слабкому компоненті тримав систему у FRAGMENTED
+    # навіть при D=0.91, S=0.91, phi=0.83 — через boundary_coherence ~0.5.
+    # 0.65 * min + 0.35 * mean: найслабша ланка все ще тягне вниз, але справедливо.
+    raw = 0.65 * minimum(components) + 0.35 * mean(components)
     round(safe_nan(clamp01(raw)), digits=3)
 end
 
