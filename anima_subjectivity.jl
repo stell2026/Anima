@@ -53,6 +53,12 @@
 # using Tables
 # using DBInterface
 
+# Безпечний fallback для bg_log — якщо anima_background.jl ще не підключено
+# або використовується стара версія без черги повідомлень.
+if !isdefined(Main, :bg_log)
+    bg_log(msg::String) = println(msg)
+end
+
 # time() — Base.time(), повертає Float64 секунди від епохи UNIX.
 # Не потребує using Dates. Якщо потрібна точність до нс — замінити на
 # Dates.datetime2unix(Dates.now()) і додати using Dates.
@@ -849,7 +855,7 @@ function _promote_to_belief!(subj::SubjectivityEngine,
     """, (pattern_id,))
 
     # Виводимо тільки якщо справді нове
-    is_new && println("  [SUBJ] Нове переконання: \"$(key)\" ($(belief_type), val=$(round(valence_bias, digits=2)))")
+    is_new && bg_log("  [SUBJ] Нове переконання: \"$(key)\" ($(belief_type), val=$(round(valence_bias, digits=2)))")
 
     # Переконання народжене з травми → впливає на semantic_memory.
     # ВАЖЛИВО: ключ "EB_structural_fragility" — НЕ "structural_fragility".
