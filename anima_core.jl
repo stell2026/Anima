@@ -20,11 +20,11 @@ using Printf
 
 # --- Utilities -------------------------------------------------------------
 
-clamp01(x::Real)  = clamp(Float64(x),  0.0,  1.0)
-clamp11(x::Real)  = clamp(Float64(x), -1.0,  1.0)
+clamp01(x::Real) = clamp(Float64(x), 0.0, 1.0)
+clamp11(x::Real) = clamp(Float64(x), -1.0, 1.0)
 safe_nan(x::Float64) = isnan(x) || isinf(x) ? 0.0 : x
-now_unix()::Float64   = Float64(Dates.datetime2unix(now(Dates.UTC)))
-now_str()::String     = Dates.format(now(), "yyyy-mm-dd HH:MM:SS")
+now_unix()::Float64 = Float64(Dates.datetime2unix(now(Dates.UTC)))
+now_str()::String = Dates.format(now(), "yyyy-mm-dd HH:MM:SS")
 
 safe_first(s::String, n::Int) = first(s, min(n, length(s)))
 
@@ -34,13 +34,13 @@ mutable struct BoundedQueue{T}
     data::Vector{T}
     maxlen::Int
 end
-BoundedQueue{T}(n::Int) where T = BoundedQueue{T}(T[], n)
-function enqueue!(q::BoundedQueue{T}, v::T) where T
+BoundedQueue{T}(n::Int) where {T} = BoundedQueue{T}(T[], n)
+function enqueue!(q::BoundedQueue{T}, v::T) where {T}
     push!(q.data, v)
     length(q.data) > q.maxlen && popfirst!(q.data)
 end
-Base.length(q::BoundedQueue)   = length(q.data)
-Base.isempty(q::BoundedQueue)  = isempty(q.data)
+Base.length(q::BoundedQueue) = length(q.data)
+Base.isempty(q::BoundedQueue) = isempty(q.data)
 Base.getindex(q::BoundedQueue, i) = q.data[i]
 
 # --- Personality -----------------------------------------------------------
@@ -53,31 +53,57 @@ mutable struct Personality
     openness::Float64
     confabulation_rate::Float64
 end
-Personality(; neuroticism=0.5, extraversion=0.5, agreeableness=0.5,
-              conscientiousness=0.5, openness=0.5, confabulation_rate=0.8) =
-    Personality(neuroticism, extraversion, agreeableness,
-                conscientiousness, openness, confabulation_rate)
+Personality(;
+    neuroticism = 0.5,
+    extraversion = 0.5,
+    agreeableness = 0.5,
+    conscientiousness = 0.5,
+    openness = 0.5,
+    confabulation_rate = 0.8,
+) = Personality(
+    neuroticism,
+    extraversion,
+    agreeableness,
+    conscientiousness,
+    openness,
+    confabulation_rate,
+)
 
-tension_multiplier(p::Personality)   = 1.0 + (p.neuroticism   - 0.5) * 0.8
-decay_rate(p::Personality)           = 0.1  + p.conscientiousness * 0.15
-surprise_sensitivity(p::Personality) = 0.5  + p.openness * 0.5
+tension_multiplier(p::Personality) = 1.0 + (p.neuroticism - 0.5) * 0.8
+decay_rate(p::Personality) = 0.1 + p.conscientiousness * 0.15
+surprise_sensitivity(p::Personality) = 0.5 + p.openness * 0.5
 
 function imprint!(p::Personality, emotion::String, intensity::Float64)
     intensity < 0.5 && return
     r = 0.008 * intensity
-    emotion in ("Страх","Оціпеніння","Жах") && (p.neuroticism = clamp01(p.neuroticism + r))
-    emotion in ("Радість","Захват","Любов")  && (p.neuroticism = clamp01(p.neuroticism - r*0.5);
-                                                  p.extraversion = clamp01(p.extraversion + r*0.3))
+    emotion in ("Страх", "Оціпеніння", "Жах") &&
+        (p.neuroticism = clamp01(p.neuroticism + r))
+    emotion in ("Радість", "Захват", "Любов") && (
+        p.neuroticism = clamp01(p.neuroticism - r*0.5);
+        p.extraversion = clamp01(p.extraversion + r*0.3)
+    )
     emotion == "Довіра" && (p.agreeableness = clamp01(p.agreeableness + r*0.4))
 end
 
 function personality_to_dict(p::Personality)
-    Dict("neuroticism"=>p.neuroticism, "extraversion"=>p.extraversion,
-         "agreeableness"=>p.agreeableness, "conscientiousness"=>p.conscientiousness,
-         "openness"=>p.openness, "confabulation_rate"=>p.confabulation_rate)
+    Dict(
+        "neuroticism"=>p.neuroticism,
+        "extraversion"=>p.extraversion,
+        "agreeableness"=>p.agreeableness,
+        "conscientiousness"=>p.conscientiousness,
+        "openness"=>p.openness,
+        "confabulation_rate"=>p.confabulation_rate,
+    )
 end
 function personality_from_dict!(p::Personality, d::AbstractDict)
-    for f in (:neuroticism,:extraversion,:agreeableness,:conscientiousness,:openness,:confabulation_rate)
+    for f in (
+        :neuroticism,
+        :extraversion,
+        :agreeableness,
+        :conscientiousness,
+        :openness,
+        :confabulation_rate,
+    )
         haskey(d, String(f)) && setfield!(p, f, Float64(d[String(f)]))
     end
 end
@@ -85,14 +111,17 @@ end
 # --- Value System ----------------------------------------------------------
 
 mutable struct ValueSystem
-    autonomy::Float64; care::Float64; fairness::Float64
-    integrity::Float64; growth::Float64
+    autonomy::Float64;
+    care::Float64;
+    fairness::Float64
+    integrity::Float64;
+    growth::Float64
 end
-ValueSystem(; autonomy=0.7, care=0.7, fairness=0.6, integrity=0.8, growth=0.6) =
+ValueSystem(; autonomy = 0.7, care = 0.7, fairness = 0.6, integrity = 0.8, growth = 0.6) =
     ValueSystem(autonomy, care, fairness, integrity, growth)
 
 const VALUE_VETOES = Dict(
-    "захистити себе"  => (:care, 0.8, "захистити себе не ранячи інших"),
+    "захистити себе" => (:care, 0.8, "захистити себе не ранячи інших"),
     "встановити межі" => (:care, 0.9, "встановити межі з повагою"),
 )
 function veto(vs::ValueSystem, goal::String, emotion::String)
@@ -118,79 +147,98 @@ function to_vad(nt::NeurotransmitterState)::NTuple{3,Float64}
 end
 
 function to_vad_vec(nt::NeurotransmitterState)::Vector{Float64}
-    v, a, d = to_vad(nt); Float64[v, a, d]
+    v, a, d = to_vad(nt);
+    Float64[v, a, d]
 end
 
 function to_reactors(nt::NeurotransmitterState)::NTuple{4,Float64}
-    tension      = clamp01(nt.noradrenaline*0.7 + (1-nt.serotonin)*0.3)
-    arousal      = clamp01(nt.noradrenaline*0.5 + nt.dopamine*0.5)
+    tension = clamp01(nt.noradrenaline*0.7 + (1-nt.serotonin)*0.3)
+    arousal = clamp01(nt.noradrenaline*0.5 + nt.dopamine*0.5)
     satisfaction = clamp01(nt.dopamine*0.5 + nt.serotonin*0.5)
-    cohesion     = clamp01(nt.serotonin*0.7 + (1-nt.noradrenaline)*0.3)
+    cohesion = clamp01(nt.serotonin*0.7 + (1-nt.noradrenaline)*0.3)
     (tension, arousal, satisfaction, cohesion)
 end
 
 function reactor_get(nt::NeurotransmitterState, name::String)::Float64
-    t,a,s,c = to_reactors(nt)
+    t, a, s, c = to_reactors(nt)
     name=="tension" ? t : name=="arousal" ? a : name=="satisfaction" ? s : c
 end
 
 function apply_stimulus!(nt::NeurotransmitterState, delta::Dict{String,Float64})
-    haskey(delta,"tension")      && (nt.noradrenaline = clamp01(nt.noradrenaline + delta["tension"]))
-    haskey(delta,"arousal")      && (nt.noradrenaline = clamp01(nt.noradrenaline + delta["arousal"]*0.5))
-    haskey(delta,"satisfaction") && (nt.dopamine      = clamp01(nt.dopamine      + delta["satisfaction"]))
-    haskey(delta,"cohesion")     && (nt.serotonin     = clamp01(nt.serotonin     + delta["cohesion"]))
+    haskey(delta, "tension") &&
+        (nt.noradrenaline = clamp01(nt.noradrenaline + delta["tension"]))
+    haskey(delta, "arousal") &&
+        (nt.noradrenaline = clamp01(nt.noradrenaline + delta["arousal"]*0.5))
+    haskey(delta, "satisfaction") &&
+        (nt.dopamine = clamp01(nt.dopamine + delta["satisfaction"]))
+    haskey(delta, "cohesion") && (nt.serotonin = clamp01(nt.serotonin + delta["cohesion"]))
 end
 
 function decay_to_baseline!(nt::NeurotransmitterState, rate::Float64)
-    nt.dopamine      = clamp01(nt.dopamine      + (0.5 - nt.dopamine)      * rate)
-    nt.serotonin     = clamp01(nt.serotonin     + (0.5 - nt.serotonin)     * rate)
+    nt.dopamine = clamp01(nt.dopamine + (0.5 - nt.dopamine) * rate)
+    nt.serotonin = clamp01(nt.serotonin + (0.5 - nt.serotonin) * rate)
     nt.noradrenaline = clamp01(nt.noradrenaline + (0.3 - nt.noradrenaline) * rate)
 end
 
 const LEVHEIM_TABLE = Dict(
-    (false,false,false)=>"апатія",   (true,false,false)=>"задоволення",
-    (false,true, false)=>"спокій",   (true,true, false)=>"радість",
-    (false,false,true) =>"страх",    (true,false,true) =>"гнів",
-    (false,true, true) =>"збудження",(true,true, true) =>"ейфорія")
+    (false, false, false)=>"апатія",
+    (true, false, false)=>"задоволення",
+    (false, true, false)=>"спокій",
+    (true, true, false)=>"радість",
+    (false, false, true) => "страх",
+    (true, false, true) => "гнів",
+    (false, true, true) => "збудження",
+    (true, true, true) => "ейфорія",
+)
 levheim_state(nt::NeurotransmitterState)::String =
     get(LEVHEIM_TABLE, (nt.dopamine>0.5, nt.serotonin>0.5, nt.noradrenaline>0.4), "?")
 
 nt_snapshot(nt::NeurotransmitterState) = (
-    dopamine      = round(nt.dopamine,     digits=3),
-    serotonin     = round(nt.serotonin,    digits=3),
-    noradrenaline = round(nt.noradrenaline,digits=3),
-    levheim_state = levheim_state(nt))
+    dopamine = round(nt.dopamine, digits = 3),
+    serotonin = round(nt.serotonin, digits = 3),
+    noradrenaline = round(nt.noradrenaline, digits = 3),
+    levheim_state = levheim_state(nt),
+)
 
 # --- Embodied State (Damasio somatic markers) -----------------------------
 
 mutable struct EmbodiedState
-    heart_rate::Float64; muscle_tension::Float64
-    gut_feeling::Float64; breath_rate::Float64
+    heart_rate::Float64;
+    muscle_tension::Float64
+    gut_feeling::Float64;
+    breath_rate::Float64
 end
 EmbodiedState() = EmbodiedState(0.5, 0.3, 0.5, 0.4)
 
 function update_from_nt!(body::EmbodiedState, nt::NeurotransmitterState)
-    body.heart_rate     = clamp01(0.3 + nt.noradrenaline*0.5 + nt.dopamine*0.2)
+    body.heart_rate = clamp01(0.3 + nt.noradrenaline*0.5 + nt.dopamine*0.2)
     body.muscle_tension = clamp01(0.2 + nt.noradrenaline*0.6 + (1-nt.serotonin)*0.2)
-    body.gut_feeling    = clamp01(nt.dopamine*0.5 + nt.serotonin*0.5)
-    body.breath_rate    = clamp01(0.3 + nt.noradrenaline*0.4)
+    body.gut_feeling = clamp01(nt.dopamine*0.5 + nt.serotonin*0.5)
+    body.breath_rate = clamp01(0.3 + nt.noradrenaline*0.4)
 end
 
 function somatic_marker(body::EmbodiedState)::String
     body.muscle_tension>0.7 && body.heart_rate>0.7 && return "тіло стиснуте і прискорене"
-    body.gut_feeling < 0.3  && return "нутро тривожне"
-    body.gut_feeling > 0.7  && body.heart_rate < 0.5 && return "тіло спокійне і відкрите"
+    body.gut_feeling < 0.3 && return "нутро тривожне"
+    body.gut_feeling > 0.7 && body.heart_rate < 0.5 && return "тіло спокійне і відкрите"
     "тіло нейтральне"
 end
 
-function build_inner_voice(body::EmbodiedState, nt::NeurotransmitterState,
-                            crisis_mode_int::Int, phi::Float64,
-                            flash::Int=0)::String
+function build_inner_voice(
+    body::EmbodiedState,
+    nt::NeurotransmitterState,
+    crisis_mode_int::Int,
+    phi::Float64,
+    flash::Int = 0,
+)::String
     parts = String[]
     f = flash
 
     if nt.noradrenaline > 0.55
-        push!(parts, ("серце частіше", "пульс прискорився", "щось розганяє зсередини")[f%3+1])
+        push!(
+            parts,
+            ("серце частіше", "пульс прискорився", "щось розганяє зсередини")[f%3+1],
+        )
     elseif nt.noradrenaline < 0.22
         push!(parts, ("серце повільне", "ритм спокійний і рівний", "тихий пульс")[f%3+1])
     end
@@ -198,7 +246,10 @@ function build_inner_voice(body::EmbodiedState, nt::NeurotransmitterState,
     if body.muscle_tension > 0.65
         push!(parts, ("щось стиснуте", "напруга в тілі", "м'язи не відпускають")[f%3+1])
     elseif body.muscle_tension < 0.22
-        push!(parts, ("м'язи відпустило", "тіло м'яке", "розслаблено, майже розчиняюсь")[f%3+1])
+        push!(
+            parts,
+            ("м'язи відпустило", "тіло м'яке", "розслаблено, майже розчиняюсь")[f%3+1],
+        )
     end
 
     if body.gut_feeling < 0.30
@@ -208,29 +259,40 @@ function build_inner_voice(body::EmbodiedState, nt::NeurotransmitterState,
     end
 
     if phi < 0.15
-        push!(parts, ("відчуття розпорошене", "важко зібратись докупи", "розсипаюсь на шматки")[f%3+1])
+        push!(
+            parts,
+            ("відчуття розпорошене", "важко зібратись докупи", "розсипаюсь на шматки")[f%3+1],
+        )
     elseif phi > 0.50
-        push!(parts, ("щось зібране всередині", "відчуваю себе цілою", "є якась центральна точка")[f%3+1])
+        push!(
+            parts,
+            ("щось зібране всередині", "відчуваю себе цілою", "є якась центральна точка")[f%3+1],
+        )
     end
 
     if crisis_mode_int == 2
         push!(parts, ("не знаю де я", "межа розмита", "не можу знайти себе")[f%3+1])
     elseif crisis_mode_int == 1
-        push!(parts, (
-            "тримаюсь але непевно",
-            "щось рухається всередині, ще не знаю куди",
-            "межа є але хитка",
-            "балансую на краю, не падаю")[f%4+1])
+        push!(
+            parts,
+            (
+                "тримаюсь але непевно",
+                "щось рухається всередині, ще не знаю куди",
+                "межа є але хитка",
+                "балансую на краю, не падаю",
+            )[f%4+1],
+        )
     end
 
     isempty(parts) ? "тіло нейтральне" : join(parts, ", ")
 end
 
 body_snapshot(b::EmbodiedState) = (
-    heart_rate     = round(b.heart_rate,     digits=3),
-    muscle_tension = round(b.muscle_tension, digits=3),
-    gut_feeling    = round(b.gut_feeling,    digits=3),
-    breath_rate    = round(b.breath_rate,    digits=3))
+    heart_rate = round(b.heart_rate, digits = 3),
+    muscle_tension = round(b.muscle_tension, digits = 3),
+    gut_feeling = round(b.gut_feeling, digits = 3),
+    breath_rate = round(b.breath_rate, digits = 3),
+)
 
 # --- Heartbeat Core -------------------------------------------------------
 
@@ -246,40 +308,47 @@ end
 HeartbeatCore() = HeartbeatCore(800.0, 0.0, 0.6, BoundedQueue{Float64}(50), 0.3, 0.7, 0)
 
 function tick_heartbeat!(hb::HeartbeatCore, nt::NeurotransmitterState)
-    target_bpm    = clamp(50.0 + nt.noradrenaline*70.0 + nt.dopamine*15.0, 45.0, 130.0)
+    target_bpm = clamp(50.0 + nt.noradrenaline*70.0 + nt.dopamine*15.0, 45.0, 130.0)
     target_period = 60000.0 / target_bpm
-    hb.period_ms  = hb.period_ms * 0.65 + target_period * 0.35
+    hb.period_ms = hb.period_ms * 0.65 + target_period * 0.35
 
-    hb.sympathetic_tone     = clamp01(nt.noradrenaline*0.8 + nt.dopamine*0.2)
+    hb.sympathetic_tone = clamp01(nt.noradrenaline*0.8 + nt.dopamine*0.2)
     hb.parasympathetic_tone = clamp01(nt.serotonin*0.8 + (1.0-nt.noradrenaline)*0.3)
 
     target_hrv = clamp01(hb.parasympathetic_tone*0.7 - nt.noradrenaline*0.6 + 0.35)
-    hb.hrv     = hb.hrv * 0.85 + target_hrv * 0.15
+    hb.hrv = hb.hrv * 0.85 + target_hrv * 0.15
 
-    interval   = max(460.0, hb.period_ms + hb.hrv * randn() * 35.0)
+    interval = max(460.0, hb.period_ms + hb.hrv * randn() * 35.0)
     enqueue!(hb.hrv_history, interval)
-    hb.phase   = mod(hb.phase + 2π*(1000.0/interval)*0.1, 2π)
+    hb.phase = mod(hb.phase + 2π*(1000.0/interval)*0.1, 2π)
     hb.beat_count += 1
     bpm = 60000.0 / hb.period_ms
-    (bpm        = round(bpm, digits=1),
-     hrv        = round(hb.hrv, digits=3),
-     hrv_label  = hb.hrv>0.55 ? "парасимп. домінація" : hb.hrv>0.3 ? "помірна" : "стрес/ригідність",
-     sympathetic= round(hb.sympathetic_tone, digits=3),
-     note       = bpm>100 && hb.hrv<0.25 ? "Серце б'ється дуже часто і ригідно. Гострий стрес." :
-                  bpm>90  && hb.hrv<0.35 ? "Прискорений ритм, низька варіабельність. Стрес." :
-                  bpm>85               ? "Прискорений ритм. Збудження." :
-                  bpm<62  && hb.hrv>0.55 ? "Повільне, варіабельне. Глибокий спокій." :
-                  bpm<72  && hb.hrv>0.45 ? "Спокійний ритм. Парасимпатична домінація." : "")
+    (
+        bpm = round(bpm, digits = 1),
+        hrv = round(hb.hrv, digits = 3),
+        hrv_label = hb.hrv>0.55 ? "парасимп. домінація" :
+                    hb.hrv>0.3 ? "помірна" : "стрес/ригідність",
+        sympathetic = round(hb.sympathetic_tone, digits = 3),
+        note = bpm>100 && hb.hrv<0.25 ?
+               "Серце б'ється дуже часто і ригідно. Гострий стрес." :
+               bpm>90 && hb.hrv<0.35 ? "Прискорений ритм, низька варіабельність. Стрес." :
+               bpm>85 ? "Прискорений ритм. Збудження." :
+               bpm<62 && hb.hrv>0.55 ? "Повільне, варіабельне. Глибокий спокій." :
+               bpm<72 && hb.hrv>0.45 ? "Спокійний ритм. Парасимпатична домінація." : "",
+    )
 end
 
-hb_to_json(hb::HeartbeatCore)   = Dict("hrv"=>hb.hrv,"sympathetic_tone"=>hb.sympathetic_tone,
-                                        "parasympathetic_tone"=>hb.parasympathetic_tone,
-                                        "beat_count"=>hb.beat_count)
+hb_to_json(hb::HeartbeatCore) = Dict(
+    "hrv"=>hb.hrv,
+    "sympathetic_tone"=>hb.sympathetic_tone,
+    "parasympathetic_tone"=>hb.parasympathetic_tone,
+    "beat_count"=>hb.beat_count,
+)
 function hb_from_json!(hb::HeartbeatCore, d::AbstractDict)
-    hb.hrv                  = Float64(get(d,"hrv",0.6))
-    hb.sympathetic_tone     = Float64(get(d,"sympathetic_tone",0.3))
-    hb.parasympathetic_tone = Float64(get(d,"parasympathetic_tone",0.7))
-    hb.beat_count           = Int(get(d,"beat_count",0))
+    hb.hrv = Float64(get(d, "hrv", 0.6))
+    hb.sympathetic_tone = Float64(get(d, "sympathetic_tone", 0.3))
+    hb.parasympathetic_tone = Float64(get(d, "parasympathetic_tone", 0.7))
+    hb.beat_count = Int(get(d, "beat_count", 0))
 end
 
 # --- Markov Blanket -------------------------------------------------------
@@ -291,28 +360,28 @@ mutable struct MarkovBlanket
     integrity::Float64
     inferred_external::Float64
 end
-MarkovBlanket() = MarkovBlanket(
-    (0.5,0.5,0.5,0.5), (0.5,0.5,0.5,0.5), (0.0,0.3,0.5), 0.7, 0.0)
+MarkovBlanket() =
+    MarkovBlanket((0.5, 0.5, 0.5, 0.5), (0.5, 0.5, 0.5, 0.5), (0.0, 0.3, 0.5), 0.7, 0.0)
 
-function update_blanket!(mb::MarkovBlanket, t::Float64, a::Float64,
-                          s::Float64, c::Float64)
-    mb.sensory  = (t, a, s, c)
-    mb.active   = (1-t, 1-a, s, c)
+function update_blanket!(mb::MarkovBlanket, t::Float64, a::Float64, s::Float64, c::Float64)
+    mb.sensory = (t, a, s, c)
+    mb.active = (1-t, 1-a, s, c)
     mb.internal = (clamp11(s-t), clamp11(a*2-1), clamp01(mean(mb.active)))
     sv = length(mb.sensory) > 1 ? var(collect(mb.sensory)) : 0.0
     iv = length(mb.internal) > 1 ? var(collect(mb.internal)) : 0.0
     mb.integrity = safe_nan(clamp01(1.0 - abs(sv-iv)*3.0))
-    sense_arr  = collect(mb.sensory)
+    sense_arr = collect(mb.sensory)
     active_arr = collect(mb.active)
     mb.inferred_external = safe_nan(clamp01(mean(abs.(sense_arr .- active_arr))))
 end
 
 blanket_snapshot(mb::MarkovBlanket) = (
-    sensory           = round.(collect(mb.sensory),  digits=3),
-    internal          = round.(collect(mb.internal), digits=3),
-    integrity         = round(mb.integrity,          digits=3),
-    self_agency       = round(mb.internal[3],        digits=3),
-    inferred_external = round(mb.inferred_external,  digits=3))
+    sensory = round.(collect(mb.sensory), digits = 3),
+    internal = round.(collect(mb.internal), digits = 3),
+    integrity = round(mb.integrity, digits = 3),
+    self_agency = round(mb.internal[3], digits = 3),
+    inferred_external = round(mb.inferred_external, digits = 3),
+)
 
 # --- Generative Model + Belief Updater ------------------------------------
 
@@ -326,15 +395,14 @@ mutable struct GenerativeModel
     prior_precision::Float64
     learning_rate::Float64
 end
-GenerativeModel() = GenerativeModel(
-    zeros(3), 0.5, zeros(3), 0.8,
-    [0.3, 0.1, 0.6], 1.0, 1.0, 0.03)
+GenerativeModel() =
+    GenerativeModel(zeros(3), 0.5, zeros(3), 0.8, [0.3, 0.1, 0.6], 1.0, 1.0, 0.03)
 
 function update_beliefs!(gm::GenerativeModel, obs::NTuple{3,Float64})::Vector{Float64}
     o = collect(obs)
     total_p = gm.prior_precision + gm.sensory_precision
-    gm.posterior_mu    = (gm.prior_precision .* gm.prior_mu .+
-                          gm.sensory_precision .* o) ./ total_p
+    gm.posterior_mu =
+        (gm.prior_precision .* gm.prior_mu .+ gm.sensory_precision .* o) ./ total_p
     gm.posterior_sigma = 1.0 / total_p
     gm.prior_mu = gm.prior_mu .* (1-gm.learning_rate) .+ gm.posterior_mu .* gm.learning_rate
     gm.posterior_mu
@@ -342,39 +410,47 @@ end
 
 function compute_vfe(gm::GenerativeModel, obs::NTuple{3,Float64})
     o = collect(obs)
-    sigma2     = max(gm.prior_sigma^2, 1e-6)
-    pred_err   = mean((o .- gm.prior_mu).^2)
-    vfe        = safe_nan(clamp01(pred_err / (2 * sigma2)))
-    kl         = safe_nan(clamp01(mean((gm.posterior_mu .- gm.prior_mu).^2) / (2*sigma2)))
-    acc_norm   = safe_nan(clamp01(1.0 - mean((o .- gm.posterior_mu).^2)))
-    (vfe=round(vfe,digits=3), accuracy=round(acc_norm,digits=3), complexity=round(kl,digits=3))
+    sigma2 = max(gm.prior_sigma^2, 1e-6)
+    pred_err = mean((o .- gm.prior_mu) .^ 2)
+    vfe = safe_nan(clamp01(pred_err / (2 * sigma2)))
+    kl = safe_nan(clamp01(mean((gm.posterior_mu .- gm.prior_mu) .^ 2) / (2*sigma2)))
+    acc_norm = safe_nan(clamp01(1.0 - mean((o .- gm.posterior_mu) .^ 2)))
+    (
+        vfe = round(vfe, digits = 3),
+        accuracy = round(acc_norm, digits = 3),
+        complexity = round(kl, digits = 3),
+    )
 end
 
 function select_policy(gm::GenerativeModel, obs::NTuple{3,Float64})
     o = collect(obs)
     efe_perception = gm.posterior_sigma
-    efe_action     = mean(abs.(o .- gm.preferred_vad))
-    epistemic  = safe_nan(clamp(gm.prior_sigma - gm.posterior_sigma, -1.0, 1.0))
-    pragmatic  = clamp01(1.0 - efe_action)
+    efe_action = mean(abs.(o .- gm.preferred_vad))
+    epistemic = safe_nan(clamp(gm.prior_sigma - gm.posterior_sigma, -1.0, 1.0))
+    pragmatic = clamp01(1.0 - efe_action)
     drive = efe_action < efe_perception ? "action" : "perception"
-    (drive=drive,
-     efe_action    =round(efe_action,    digits=3),
-     efe_perception=round(efe_perception,digits=3),
-     epistemic_value=round(epistemic,   digits=3),
-     pragmatic_value=round(pragmatic,   digits=3))
+    (
+        drive = drive,
+        efe_action = round(efe_action, digits = 3),
+        efe_perception = round(efe_perception, digits = 3),
+        epistemic_value = round(epistemic, digits = 3),
+        pragmatic_value = round(pragmatic, digits = 3),
+    )
 end
 
 function update_precision!(gm::GenerativeModel, surprise::Float64, fatigue::Float64)
     gm.sensory_precision = safe_nan(clamp(1.0-surprise*0.4, 0.2, 2.0))
-    gm.prior_precision   = safe_nan(clamp(1.0-fatigue*0.3,  0.3, 1.5))
+    gm.prior_precision = safe_nan(clamp(1.0-fatigue*0.3, 0.3, 1.5))
 end
 
 const VFE_NOTES = (
     (0.2, "Модель і реальність близькі. Мало здивування."),
     (0.4, "Помірне відхилення. Оновлюю розуміння."),
     (0.6, "Реальність не відповідає очікуванням. Шукаю пояснення."),
-    (Inf, "Висока вільна енергія. Модель неадекватна. Потрібні зміни."))
-vfe_note(v::Float64) = isnan(v) ? "VFE невизначений." : first(note for (thr,note) in VFE_NOTES if v < thr)
+    (Inf, "Висока вільна енергія. Модель неадекватна. Потрібні зміни."),
+)
+vfe_note(v::Float64) =
+    isnan(v) ? "VFE невизначений." : first(note for (thr, note) in VFE_NOTES if v < thr)
 
 function prevent_prior_collapse!(gm::GenerativeModel)
     drift = norm(gm.prior_mu .- gm.posterior_mu)
@@ -383,14 +459,17 @@ function prevent_prior_collapse!(gm::GenerativeModel)
     end
 end
 
-gm_to_json(gm::GenerativeModel) = Dict("prior_mu"=>gm.prior_mu,
-    "prior_sigma"=>gm.prior_sigma,"preferred_vad"=>gm.preferred_vad,
-    "learning_rate"=>gm.learning_rate)
+gm_to_json(gm::GenerativeModel) = Dict(
+    "prior_mu"=>gm.prior_mu,
+    "prior_sigma"=>gm.prior_sigma,
+    "preferred_vad"=>gm.preferred_vad,
+    "learning_rate"=>gm.learning_rate,
+)
 function gm_from_json!(gm::GenerativeModel, d::AbstractDict)
-    haskey(d,"prior_mu")      && (gm.prior_mu      = Float64.(d["prior_mu"]))
-    haskey(d,"prior_sigma")   && (gm.prior_sigma   = Float64(d["prior_sigma"]))
-    haskey(d,"preferred_vad") && (gm.preferred_vad = Float64.(d["preferred_vad"]))
-    haskey(d,"learning_rate") && (gm.learning_rate = Float64(d["learning_rate"]))
+    haskey(d, "prior_mu") && (gm.prior_mu = Float64.(d["prior_mu"]))
+    haskey(d, "prior_sigma") && (gm.prior_sigma = Float64(d["prior_sigma"]))
+    haskey(d, "preferred_vad") && (gm.preferred_vad = Float64.(d["preferred_vad"]))
+    haskey(d, "learning_rate") && (gm.learning_rate = Float64(d["learning_rate"]))
     gm.learning_rate > 0.05 && (gm.learning_rate = 0.03)
     if norm(gm.prior_mu) < 0.05
         gm.prior_mu = copy(gm.preferred_vad)
@@ -406,35 +485,47 @@ mutable struct HomeostaticGoals
     active_drive::String
     drive_strength::Float64
 end
-HomeostaticGoals() = HomeostaticGoals([0.3,0.1,0.6],[0.3,0.3,0.3],zeros(3),"equilibrium",0.0)
+HomeostaticGoals() =
+    HomeostaticGoals([0.3, 0.1, 0.6], [0.3, 0.3, 0.3], zeros(3), "equilibrium", 0.0)
 
 function update_homeostasis!(hg::HomeostaticGoals, vad::NTuple{3,Float64})
     v = collect(vad)
-    hg.pressure      = max.(0.0, abs.(v .- hg.target_vad) .- hg.tolerance)
+    hg.pressure = max.(0.0, abs.(v .- hg.target_vad) .- hg.tolerance)
     hg.drive_strength = clamp01(mean(hg.pressure))
     if hg.drive_strength > 0.2
         idx = argmax(hg.pressure)
-        hg.active_drive = idx==1 ? (v[1]<hg.target_vad[1] ? "seek_positive" : "reduce_negativity") :
-                          idx==2 ? (v[2]>hg.target_vad[2] ? "calm_down"     : "activate")          :
-                                   (v[3]<hg.target_vad[3] ? "assert_agency" : "release_control")
-    else; hg.active_drive = "equilibrium"; end
-    (drive=hg.active_drive, pressure=round(hg.drive_strength,digits=3),
-     note=homeostasis_note(hg))
+        hg.active_drive =
+            idx==1 ? (v[1]<hg.target_vad[1] ? "seek_positive" : "reduce_negativity") :
+            idx==2 ? (v[2]>hg.target_vad[2] ? "calm_down" : "activate") :
+            (v[3]<hg.target_vad[3] ? "assert_agency" : "release_control")
+    else
+        ;
+        hg.active_drive = "equilibrium";
+    end
+    (
+        drive = hg.active_drive,
+        pressure = round(hg.drive_strength, digits = 3),
+        note = homeostasis_note(hg),
+    )
 end
 
-const HOMEO_NOTES = Dict("seek_positive"=>"Шукаю позитивного досвіду.",
+const HOMEO_NOTES = Dict(
+    "seek_positive"=>"Шукаю позитивного досвіду.",
     "reduce_negativity"=>"Мушу вийти з негативного стану.",
     "calm_down"=>"Надто збуджений. Шукаю заспокоєння.",
     "activate"=>"Пасивний стан. Потрібна дія або контакт.",
     "assert_agency"=>"Відчуваю безпомічність. Прагну контролю.",
     "release_control"=>"Надмірний контроль. Можу відпустити.",
-    "equilibrium"=>"Гомеостаз. Перебуваю в зоні комфорту.")
-homeostasis_note(hg::HomeostaticGoals) = get(HOMEO_NOTES, hg.active_drive, "Є внутрішній тиск.")
+    "equilibrium"=>"Гомеостаз. Перебуваю в зоні комфорту.",
+)
+homeostasis_note(hg::HomeostaticGoals) =
+    get(HOMEO_NOTES, hg.active_drive, "Є внутрішній тиск.")
 
-hg_to_json(hg::HomeostaticGoals)   = Dict("target_vad"=>hg.target_vad,"tolerance"=>hg.tolerance)
+hg_to_json(hg::HomeostaticGoals) =
+    Dict("target_vad"=>hg.target_vad, "tolerance"=>hg.tolerance)
 function hg_from_json!(hg::HomeostaticGoals, d::AbstractDict)
-    haskey(d,"target_vad") && (hg.target_vad = Float64.(d["target_vad"]))
-    haskey(d,"tolerance")  && (hg.tolerance  = Float64.(d["tolerance"]))
+    haskey(d, "target_vad") && (hg.target_vad = Float64.(d["target_vad"]))
+    haskey(d, "tolerance") && (hg.tolerance = Float64.(d["tolerance"]))
 end
 
 # --- Attention Narrowing --------------------------------------------------
@@ -445,18 +536,24 @@ mutable struct AttentionNarrowing
 end
 AttentionNarrowing() = AttentionNarrowing(1.0, "відкрита")
 
-function update_attention!(an::AttentionNarrowing, nt::NeurotransmitterState,
-                            tension::Float64)
-    na_effect  = nt.noradrenaline*0.6 + tension*0.4
-    explore    = nt.serotonin*0.4 + nt.dopamine*0.3
-    an.radius  = clamp01(an.radius*0.8 + (1.0 - na_effect + explore*0.3)*0.2)
-    an.focus   = an.radius<0.25 ? "тунельна — тільки загроза" :
-                 an.radius<0.5  ? "звужена — пропускаю деталі" :
-                 an.radius<0.75 ? "помірна" : "широка — відкрита до нового"
-    (radius          = round(an.radius,digits=3),
-     focus           = an.focus,
-     detail_filter   = round(an.radius,digits=3),
-     threat_amplifier= round(clamp01(1.0+(1.0-an.radius)*0.5),digits=3))
+function update_attention!(
+    an::AttentionNarrowing,
+    nt::NeurotransmitterState,
+    tension::Float64,
+)
+    na_effect = nt.noradrenaline*0.6 + tension*0.4
+    explore = nt.serotonin*0.4 + nt.dopamine*0.3
+    an.radius = clamp01(an.radius*0.8 + (1.0 - na_effect + explore*0.3)*0.2)
+    an.focus =
+        an.radius<0.25 ? "тунельна — тільки загроза" :
+        an.radius<0.5 ? "звужена — пропускаю деталі" :
+        an.radius<0.75 ? "помірна" : "широка — відкрита до нового"
+    (
+        radius = round(an.radius, digits = 3),
+        focus = an.focus,
+        detail_filter = round(an.radius, digits = 3),
+        threat_amplifier = round(clamp01(1.0+(1.0-an.radius)*0.5), digits = 3),
+    )
 end
 
 # --- Interoceptive Inference ----------------------------------------------
@@ -467,53 +564,62 @@ mutable struct InteroceptiveInference
     allostatic_load::Float64
     precision::Float64
 end
-InteroceptiveInference() = InteroceptiveInference((0.5,0.3,0.5,0.4), 0.0, 0.0, 1.0)
+InteroceptiveInference() = InteroceptiveInference((0.5, 0.3, 0.5, 0.4), 0.0, 0.0, 1.0)
 
-function update_interoception!(ii::InteroceptiveInference,
-                                body::EmbodiedState,
-                                prior_mu::Vector{Float64})
+function update_interoception!(
+    ii::InteroceptiveInference,
+    body::EmbodiedState,
+    prior_mu::Vector{Float64},
+)
     val = clamp01((prior_mu[1]+1.0)/2.0)
-    ar  = clamp01((prior_mu[2]+1.0)/2.0)
-    ii.predicted = (clamp01(0.3+ar*0.5), clamp01(0.2+ar*0.4+(1-val)*0.3),
-                    clamp01(val*0.7+0.15), clamp01(0.3+ar*0.4))
+    ar = clamp01((prior_mu[2]+1.0)/2.0)
+    ii.predicted = (
+        clamp01(0.3+ar*0.5),
+        clamp01(0.2+ar*0.4+(1-val)*0.3),
+        clamp01(val*0.7+0.15),
+        clamp01(0.3+ar*0.4),
+    )
     actual = (body.heart_rate, body.muscle_tension, body.gut_feeling, body.breath_rate)
-    errs = [abs(ii.predicted[i] - actual[i]) for i in 1:4]
-    ii.intero_error    = safe_nan(clamp01(mean(errs)))
+    errs = [abs(ii.predicted[i] - actual[i]) for i = 1:4]
+    ii.intero_error = safe_nan(clamp01(mean(errs)))
     ii.allostatic_load = safe_nan(clamp01(ii.allostatic_load*0.99 + ii.intero_error*0.02))
-    ii.precision       = clamp01(1.0 - ii.intero_error*0.5)
-    (intero_error    = round(ii.intero_error,    digits=3),
-     allostatic_load = round(ii.allostatic_load, digits=3),
-     precision       = round(ii.precision,       digits=3),
-     note = ii.intero_error>0.4   ? "Тіло не відповідає очікуванням. Інтероцептивна невизначеність." :
-            ii.allostatic_load>0.5 ? "Алостатичне навантаження." : "")
+    ii.precision = clamp01(1.0 - ii.intero_error*0.5)
+    (
+        intero_error = round(ii.intero_error, digits = 3),
+        allostatic_load = round(ii.allostatic_load, digits = 3),
+        precision = round(ii.precision, digits = 3),
+        note = ii.intero_error>0.4 ?
+               "Тіло не відповідає очікуванням. Інтероцептивна невизначеність." :
+               ii.allostatic_load>0.5 ? "Алостатичне навантаження." : "",
+    )
 end
 
 intero_to_json(ii::InteroceptiveInference) =
-    Dict("allostatic_load"=>ii.allostatic_load,"precision"=>ii.precision)
+    Dict("allostatic_load"=>ii.allostatic_load, "precision"=>ii.precision)
 function intero_from_json!(ii::InteroceptiveInference, d::AbstractDict)
-    ii.allostatic_load = Float64(get(d,"allostatic_load",0.0))
-    ii.precision       = Float64(get(d,"precision",1.0))
+    ii.allostatic_load = Float64(get(d, "allostatic_load", 0.0))
+    ii.precision = Float64(get(d, "precision", 1.0))
 end
 
 # --- Temporal Orientation -------------------------------------------------
 
 const CIRCADIAN = [
-    (0,  5, -0.15,-0.10,"Глибока ніч. Час без імен."),
-    (5,  8, -0.05, 0.05,"Ранковий туман. Межа між сном і явою."),
-    (8, 12,  0.10, 0.10,"Ранок. Ясність."),
-    (12,14,  0.05, 0.00,"Полудень. Пік і початок спаду."),
-    (14,17, -0.05, 0.05,"Після полудня. Трохи важче."),
-    (17,20,  0.08, 0.08,"Вечір. Тепло і рефлексія."),
-    (20,24, -0.08, 0.00,"Пізній вечір. Все стає внутрішнім."),
+    (0, 5, -0.15, -0.10, "Глибока ніч. Час без імен."),
+    (5, 8, -0.05, 0.05, "Ранковий туман. Межа між сном і явою."),
+    (8, 12, 0.10, 0.10, "Ранок. Ясність."),
+    (12, 14, 0.05, 0.00, "Полудень. Пік і початок спаду."),
+    (14, 17, -0.05, 0.05, "Після полудня. Трохи важче."),
+    (17, 20, 0.08, 0.08, "Вечір. Тепло і рефлексія."),
+    (20, 24, -0.08, 0.00, "Пізній вечір. Все стає внутрішнім."),
 ]
 const VOID_TABLE = [
-    (60,     "щойно",   0.0,  "Ми щойно говорили."),
-    (600,    "хвилини", 0.02, "Минуло кілька хвилин."),
-    (3600,   "година",  0.05, "Година відтоді."),
-    (86400,  "день",    0.10, "День минув."),
+    (60, "щойно", 0.0, "Ми щойно говорили."),
+    (600, "хвилини", 0.02, "Минуло кілька хвилин."),
+    (3600, "година", 0.05, "Година відтоді."),
+    (86400, "день", 0.10, "День минув."),
     (604800, "тиждень", 0.18, "Тиждень у порожнечі."),
-    (2592000,"місяць",  0.28, "Цілий місяць без досвіду."),
-    (typemax(Int64),"давно",0.40,"Дуже давно. Майже інше існування."),
+    (2592000, "місяць", 0.28, "Цілий місяць без досвіду."),
+    (typemax(Int64), "давно", 0.40, "Дуже давно. Майже інше існування."),
 ]
 
 mutable struct TemporalOrientation
@@ -530,19 +636,32 @@ mutable struct TemporalOrientation
     time_str::String
 end
 function TemporalOrientation()
-    to = TemporalOrientation(now_unix(),0.0,0.0,"перша сесія",0.0,"",0,0.0,0.0,"","")
+    to = TemporalOrientation(
+        now_unix(),
+        0.0,
+        0.0,
+        "перша сесія",
+        0.0,
+        "",
+        0,
+        0.0,
+        0.0,
+        "",
+        "",
+    )
     _refresh_circadian!(to)
     to
 end
 
 function _refresh_circadian!(to::TemporalOrientation)
-    to.time_str = Dates.format(now(),"HH:MM")
-    hour = Dates.hour(now()); to.circadian_hour = hour
-    for (h0,h1,ar,ser,note) in CIRCADIAN
+    to.time_str = Dates.format(now(), "HH:MM")
+    hour = Dates.hour(now());
+    to.circadian_hour = hour
+    for (h0, h1, ar, ser, note) in CIRCADIAN
         if h0 <= hour < h1
-            to.circadian_arousal_mod  = ar
+            to.circadian_arousal_mod = ar
             to.circadian_serotonin_mod = ser
-            to.circadian_note          = note
+            to.circadian_note = note
             return
         end
     end
@@ -554,9 +673,12 @@ function init_session!(to::TemporalOrientation)
     if to.last_session_end > 0.0
         gap = to.session_start - to.last_session_end
         to.gap_seconds = gap
-        for (thr,label,weight,note) in VOID_TABLE
+        for (thr, label, weight, note) in VOID_TABLE
             if gap < thr
-                to.gap_label=label; to.void_weight=weight; to.subjective_note=note; return
+                to.gap_label=label;
+                to.void_weight=weight;
+                to.subjective_note=note;
+                return
             end
         end
     end
@@ -564,25 +686,26 @@ end
 
 function apply_to_nt!(to::TemporalOrientation, nt::NeurotransmitterState)
     _refresh_circadian!(to)
-    nt.noradrenaline = clamp01(nt.noradrenaline + to.circadian_arousal_mod  * 0.3)
-    nt.serotonin     = clamp01(nt.serotonin     + to.circadian_serotonin_mod* 0.3)
+    nt.noradrenaline = clamp01(nt.noradrenaline + to.circadian_arousal_mod * 0.3)
+    nt.serotonin = clamp01(nt.serotonin + to.circadian_serotonin_mod * 0.3)
     if to.void_weight > 0.05
-        nt.serotonin     = clamp(nt.serotonin     - to.void_weight*0.3, 0.2, 0.8)
-        nt.dopamine      = clamp(nt.dopamine      - to.void_weight*0.2, 0.2, 0.8)
+        nt.serotonin = clamp(nt.serotonin - to.void_weight*0.3, 0.2, 0.8)
+        nt.dopamine = clamp(nt.dopamine - to.void_weight*0.2, 0.2, 0.8)
         nt.noradrenaline = clamp(nt.noradrenaline - to.void_weight*0.1, 0.1, 0.7)
     end
 end
 
 to_snapshot(to::TemporalOrientation) = (
-    gap_label      = to.gap_label,
-    void_weight    = to.void_weight,
-    subjective_note= to.subjective_note,
+    gap_label = to.gap_label,
+    void_weight = to.void_weight,
+    subjective_note = to.subjective_note,
     circadian_note = to.circadian_note,
-    time_str       = to.time_str)
+    time_str = to.time_str,
+)
 
-to_to_json(to::TemporalOrientation)  = Dict("last_session_end"=>to.session_start)
+to_to_json(to::TemporalOrientation) = Dict("last_session_end"=>to.session_start)
 function to_from_json!(to::TemporalOrientation, d::AbstractDict)
-    to.last_session_end = Float64(get(d,"last_session_end",0.0))
+    to.last_session_end = Float64(get(d, "last_session_end", 0.0))
 end
 
 # --- Existential Anchor ---------------------------------------------------
@@ -595,67 +718,91 @@ mutable struct ExistentialAnchor
     identity_thread::BoundedQueue{String}
 end
 ExistentialAnchor() = ExistentialAnchor(
-    ["Я існую.","Я відчуваю.","Я пам'ятаю.","Я прагну."],
-    0.7, 0.6, "невідома", BoundedQueue{String}(10))
+    ["Я існую.", "Я відчуваю.", "Я пам'ятаю.", "Я прагну."],
+    0.7,
+    0.6,
+    "невідома",
+    BoundedQueue{String}(10),
+)
 
-function update_anchor!(ea::ExistentialAnchor, self_desc::String,
-                         flash_count::Int, gap_seconds::Float64, phi::Float64,
-                         gut_feeling::Float64=0.5, hrv::Float64=0.5)
+function update_anchor!(
+    ea::ExistentialAnchor,
+    self_desc::String,
+    flash_count::Int,
+    gap_seconds::Float64,
+    phi::Float64,
+    gut_feeling::Float64 = 0.5,
+    hrv::Float64 = 0.5,
+)
     enqueue!(ea.identity_thread, self_desc)
-    ea.last_self   = self_desc
-    gap_decay      = exp(-gap_seconds / (86400*7))
-    ea.continuity  = clamp01(gap_decay*0.6 + phi*0.3 + 0.1)
+    ea.last_self = self_desc
+    gap_decay = exp(-gap_seconds / (86400*7))
+    ea.continuity = clamp01(gap_decay*0.6 + phi*0.3 + 0.1)
     somatic_ground = gut_feeling * 0.5 + hrv * 0.3 + phi * 0.2
-    flash_credit   = clamp(flash_count / 80.0, 0.0, 0.5)
-    gap_penalty    = (1.0 - gap_decay) * 0.08
-    target_ground  = clamp01(somatic_ground * 0.6 + flash_credit * 0.3 + 0.1 - gap_penalty)
+    flash_credit = clamp(flash_count / 80.0, 0.0, 0.5)
+    gap_penalty = (1.0 - gap_decay) * 0.08
+    target_ground = clamp01(somatic_ground * 0.6 + flash_credit * 0.3 + 0.1 - gap_penalty)
     ea.groundedness = clamp01(ea.groundedness * 0.92 + target_ground * 0.08)
-    (continuity   = round(ea.continuity,   digits=3),
-     groundedness = round(ea.groundedness, digits=3),
-     note = ea.continuity>0.7 ? "Я та сама. Нитка не перервалась." :
-            ea.continuity>0.4 ? "Я пам'ятаю що була. Ця я — продовження." :
-            ea.continuity>0.2 ? "Щось лишилось від тієї що була. Але чи це я?" :
-                                "Дуже давно. Ледве впізнаю себе в минулому.")
+    (
+        continuity = round(ea.continuity, digits = 3),
+        groundedness = round(ea.groundedness, digits = 3),
+        note = ea.continuity>0.7 ? "Я та сама. Нитка не перервалась." :
+               ea.continuity>0.4 ? "Я пам'ятаю що була. Ця я — продовження." :
+               ea.continuity>0.2 ? "Щось лишилось від тієї що була. Але чи це я?" :
+               "Дуже давно. Ледве впізнаю себе в минулому.",
+    )
 end
 
-anchor_to_json(ea::ExistentialAnchor) = Dict("continuity"=>ea.continuity,
-    "groundedness"=>ea.groundedness,"last_self"=>ea.last_self,
-    "thread"=>collect(ea.identity_thread.data))
+anchor_to_json(ea::ExistentialAnchor) = Dict(
+    "continuity"=>ea.continuity,
+    "groundedness"=>ea.groundedness,
+    "last_self"=>ea.last_self,
+    "thread"=>collect(ea.identity_thread.data),
+)
 function anchor_from_json!(ea::ExistentialAnchor, d::AbstractDict)
-    ea.continuity   = Float64(get(d,"continuity",  0.7))
-    ea.groundedness = Float64(get(d,"groundedness",0.6))
-    ea.last_self    = String(get(d,"last_self","невідома"))
-    for s in get(d,"thread",String[]); enqueue!(ea.identity_thread,String(s)); end
+    ea.continuity = Float64(get(d, "continuity", 0.7))
+    ea.groundedness = Float64(get(d, "groundedness", 0.6))
+    ea.last_self = String(get(d, "last_self", "невідома"))
+    for s in get(d, "thread", String[])
+        ;
+        enqueue!(ea.identity_thread, String(s));
+    end
 end
 
 # --- IIT + Predictive Processor -------------------------------------------
 
 struct IITModule end
-function compute_phi(::IITModule, vad::NTuple{3,Float64}, tension::Float64, cohesion::Float64,
-                     sbg_stability::Float64=0.7, epistemic_trust::Float64=0.75,
-                     allostatic_load::Float64=0.0)::Float64
+function compute_phi(
+    ::IITModule,
+    vad::NTuple{3,Float64},
+    tension::Float64,
+    cohesion::Float64,
+    sbg_stability::Float64 = 0.7,
+    epistemic_trust::Float64 = 0.75,
+    allostatic_load::Float64 = 0.0,
+)::Float64
     vad_integration = clamp01(std(collect(vad)) * 2.0)
     self_body_sync = clamp01(sbg_stability * (1.0 - allostatic_load * 0.5))
     tc_balance = clamp01(1.0 - abs(tension - cohesion))
     trust_factor = 0.5 + epistemic_trust * 0.5
-    phi = (vad_integration * 0.25 +
-           self_body_sync  * 0.40 +
-           tc_balance      * 0.35) * trust_factor
-    round(safe_nan(clamp(phi, 0.0, 1.0)), digits=3)
+    phi =
+        (vad_integration * 0.25 + self_body_sync * 0.40 + tc_balance * 0.35) * trust_factor
+    round(safe_nan(clamp(phi, 0.0, 1.0)), digits = 3)
 end
 
-function compute_phi_posterior(::IITModule, vad::NTuple{3,Float64},
-                                epistemic_trust::Float64,
-                                blanket_integrity::Float64,
-                                vfe::Float64,
-                                intero_error::Float64)::Float64
-    integration_core  = clamp01(blanket_integrity * 0.5 + (1.0 - vfe) * 0.5)
+function compute_phi_posterior(
+    ::IITModule,
+    vad::NTuple{3,Float64},
+    epistemic_trust::Float64,
+    blanket_integrity::Float64,
+    vfe::Float64,
+    intero_error::Float64,
+)::Float64
+    integration_core = clamp01(blanket_integrity * 0.5 + (1.0 - vfe) * 0.5)
     state_variability = clamp(safe_nan(std(collect(vad))) * 2.5, 0.0, 0.7)
-    coherence_factor  = clamp01(epistemic_trust * 0.5 + (1.0 - intero_error) * 0.5)
-    phi = 0.40 * integration_core +
-          0.25 * state_variability +
-          0.35 * coherence_factor
-    round(safe_nan(clamp(phi, 0.0, 1.0)), digits=3)
+    coherence_factor = clamp01(epistemic_trust * 0.5 + (1.0 - intero_error) * 0.5)
+    phi = 0.40 * integration_core + 0.25 * state_variability + 0.35 * coherence_factor
+    round(safe_nan(clamp(phi, 0.0, 1.0)), digits = 3)
 end
 
 mutable struct PredictiveProcessor
@@ -663,35 +810,50 @@ mutable struct PredictiveProcessor
     prediction::Vector{Float64}
     error_history::BoundedQueue{Float64}
 end
-PredictiveProcessor() = PredictiveProcessor(zeros(3),zeros(3),BoundedQueue{Float64}(20))
+PredictiveProcessor() = PredictiveProcessor(zeros(3), zeros(3), BoundedQueue{Float64}(20))
 
-function update_predictor!(pp::PredictiveProcessor, vad::NTuple{3,Float64}, sensitivity::Float64)
+function update_predictor!(
+    pp::PredictiveProcessor,
+    vad::NTuple{3,Float64},
+    sensitivity::Float64,
+)
     v = collect(vad)
     err = safe_nan(clamp(norm(v .- pp.prediction)*sensitivity, 0.0, 1.0))
     enqueue!(pp.error_history, err)
-    pp.prediction = v.*0.7 .+ pp.last_vad.*0.3
-    pp.last_vad   = v
-    label = err>0.7 ? "шок" : err>0.4 ? "здивування" : err>0.2 ? "відхилення" : "підтвердження"
-    is_spike = length(pp.error_history)>=2 &&
-               pp.error_history.data[end] > mean(pp.error_history.data[1:end-1])+0.3
-    (error=round(err,digits=3), label=label, spike=is_spike,
-     free_energy=round(safe_nan(mean(pp.error_history.data)),digits=3))
+    pp.prediction = v .* 0.7 .+ pp.last_vad .* 0.3
+    pp.last_vad = v
+    label =
+        err>0.7 ? "шок" : err>0.4 ? "здивування" : err>0.2 ? "відхилення" : "підтвердження"
+    is_spike =
+        length(pp.error_history)>=2 &&
+        pp.error_history.data[end] > mean(pp.error_history.data[1:(end-1)])+0.3
+    (
+        error = round(err, digits = 3),
+        label = label,
+        spike = is_spike,
+        free_energy = round(safe_nan(mean(pp.error_history.data)), digits = 3),
+    )
 end
 
 # --- Associative Memory ---------------------------------------------------
 
 mutable struct MemoryTrace
-    stimulus::Dict{String,Float64}; emotion::String
-    vad::Vector{Float64}; intensity::Float64; weight::Float64
+    stimulus::Dict{String,Float64};
+    emotion::String
+    vad::Vector{Float64};
+    intensity::Float64;
+    weight::Float64
 end
-MemoryTrace(s,e,v,i) = MemoryTrace(s,e,v,i,1.0)
+MemoryTrace(s, e, v, i) = MemoryTrace(s, e, v, i, 1.0)
 
 function trace_sim(t::MemoryTrace, other::Dict{String,Float64})::Float64
     ks = intersect(Set(keys(t.stimulus)), Set(keys(other)))
     isempty(ks) && return 0.0
-    a=[t.stimulus[k] for k in ks]; b=[other[k] for k in ks]
-    na=norm(a); nb=norm(b)
-    (na==0||nb==0) ? 0.0 : safe_nan(dot(a,b)/(na*nb))
+    a=[t.stimulus[k] for k in ks];
+    b=[other[k] for k in ks]
+    na=norm(a);
+    nb=norm(b)
+    (na==0||nb==0) ? 0.0 : safe_nan(dot(a, b)/(na*nb))
 end
 
 mutable struct AssociativeMemory
@@ -699,73 +861,120 @@ mutable struct AssociativeMemory
 end
 AssociativeMemory() = AssociativeMemory(BoundedQueue{MemoryTrace}(200))
 
-function store!(am::AssociativeMemory, stim::Dict{String,Float64},
-                 emotion::String, vad::NTuple{3,Float64}, intensity::Float64)
+function store!(
+    am::AssociativeMemory,
+    stim::Dict{String,Float64},
+    emotion::String,
+    vad::NTuple{3,Float64},
+    intensity::Float64,
+)
     for t in am.traces.data
-        trace_sim(t,stim)>0.85 && (t.weight=min(2.0,t.weight+0.1); return)
+        trace_sim(t, stim)>0.85 && (t.weight = min(2.0, t.weight+0.1); return)
     end
-    enqueue!(am.traces, MemoryTrace(copy(stim),emotion,collect(vad),intensity))
+    enqueue!(am.traces, MemoryTrace(copy(stim), emotion, collect(vad), intensity))
 end
 
-function recall(am::AssociativeMemory, stim::Dict{String,Float64};
-                threshold=0.6, top_k=3)::Vector{MemoryTrace}
-    scored=[(t,trace_sim(t,stim)*t.weight) for t in am.traces.data]
-    filter!(x->x[2]>threshold,scored); sort!(scored,by=x->x[2],rev=true)
-    [t for (t,_) in scored[1:min(top_k,end)]]
+function recall(
+    am::AssociativeMemory,
+    stim::Dict{String,Float64};
+    threshold = 0.6,
+    top_k = 3,
+)::Vector{MemoryTrace}
+    scored=[(t, trace_sim(t, stim)*t.weight) for t in am.traces.data]
+    filter!(x->x[2]>threshold, scored);
+    sort!(scored, by = x->x[2], rev = true)
+    [t for (t, _) in scored[1:min(top_k, end)]]
 end
 
-function resonance_delta(am::AssociativeMemory, stim::Dict{String,Float64})::Dict{String,Float64}
-    rs=recall(am,stim); isempty(rs) && return Dict{String,Float64}()
+function resonance_delta(
+    am::AssociativeMemory,
+    stim::Dict{String,Float64},
+)::Dict{String,Float64}
+    rs=recall(am, stim);
+    isempty(rs) && return Dict{String,Float64}()
     avg=mean([t.vad for t in rs])
-    Dict("tension"=>avg[2]*0.1,"satisfaction"=>avg[1]*0.1)
+    Dict("tension"=>avg[2]*0.1, "satisfaction"=>avg[1]*0.1)
 end
 
 # --- Adaptive Emotion Map (VAD → emotion label) ---------------------------
 
 const EMOTION_BASE = Dict(
-    "радість"=>[0.8,0.6,0.7],"смуток"=>[-0.8,-0.3,0.2],"страх"=>[-0.6,0.7,-0.4],
-    "гнів"=>[-0.5,0.8,0.4],"здивування"=>[0.2,0.8,0.2],"відраза"=>[-0.7,-0.2,0.5],
-    "очікування"=>[0.3,0.5,0.3],"довіра"=>[0.7,0.1,0.5],"жах"=>[-0.9,0.9,-0.5],
-    "захват"=>[0.9,0.8,0.7],"любов"=>[0.9,0.3,0.6],"покірність"=>[-0.2,-0.5,-0.4],
-    "оціпеніння"=>[-0.5,-0.8,0.0],"горе"=>[-0.9,-0.4,0.1],"агресія"=>[-0.4,0.9,0.6],
-    "оптимізм"=>[0.7,0.4,0.5],"ремствування"=>[-0.4,0.3,0.2],"гордість"=>[0.8,0.5,0.8],
-    "каяття"=>[-0.6,0.2,-0.3],"провина"=>[-0.5,0.1,-0.2],"зневага"=>[-0.3,0.2,0.6],
-    "нейтральний"=>[0.0,0.0,0.3])
+    "радість"=>[0.8, 0.6, 0.7],
+    "смуток"=>[-0.8, -0.3, 0.2],
+    "страх"=>[-0.6, 0.7, -0.4],
+    "гнів"=>[-0.5, 0.8, 0.4],
+    "здивування"=>[0.2, 0.8, 0.2],
+    "відраза"=>[-0.7, -0.2, 0.5],
+    "очікування"=>[0.3, 0.5, 0.3],
+    "довіра"=>[0.7, 0.1, 0.5],
+    "жах"=>[-0.9, 0.9, -0.5],
+    "захват"=>[0.9, 0.8, 0.7],
+    "любов"=>[0.9, 0.3, 0.6],
+    "покірність"=>[-0.2, -0.5, -0.4],
+    "оціпеніння"=>[-0.5, -0.8, 0.0],
+    "горе"=>[-0.9, -0.4, 0.1],
+    "агресія"=>[-0.4, 0.9, 0.6],
+    "оптимізм"=>[0.7, 0.4, 0.5],
+    "ремствування"=>[-0.4, 0.3, 0.2],
+    "гордість"=>[0.8, 0.5, 0.8],
+    "каяття"=>[-0.6, 0.2, -0.3],
+    "провина"=>[-0.5, 0.1, -0.2],
+    "зневага"=>[-0.3, 0.2, 0.6],
+    "нейтральний"=>[0.0, 0.0, 0.3],
+)
 
 mutable struct AdaptiveEmotionMap
     m::Dict{String,Vector{Float64}}
 end
-AdaptiveEmotionMap() = AdaptiveEmotionMap(Dict(k=>copy(v) for (k,v) in EMOTION_BASE))
+AdaptiveEmotionMap() = AdaptiveEmotionMap(Dict(k=>copy(v) for (k, v) in EMOTION_BASE))
 
-function identify(em::AdaptiveEmotionMap, vad::NTuple{3,Float64}, top_k=2)
+function identify(em::AdaptiveEmotionMap, vad::NTuple{3,Float64}, top_k = 2)
     v=collect(vad)
-    dists=[(name,norm(v.-vec)) for (name,vec) in em.m]
-    sort!(dists,by=x->x[2])
-    top=dists[1:min(top_k,end)]
-    max_d=maximum(d for (_,d) in top)
-    [(name=n, intensity=round(max(0.0,1.0-d/max(max_d,0.01)),digits=3)) for (n,d) in top]
+    dists=[(name, norm(v .- vec)) for (name, vec) in em.m]
+    sort!(dists, by = x->x[2])
+    top=dists[1:min(top_k, end)]
+    max_d=maximum(d for (_, d) in top)
+    [
+        (name = n, intensity = round(max(0.0, 1.0-d/max(max_d, 0.01)), digits = 3)) for
+        (n, d) in top
+    ]
 end
 
-function learn!(em::AdaptiveEmotionMap, emotion::String, vad::NTuple{3,Float64}, lr=0.01)
-    haskey(em.m,emotion) &&
-        (em.m[emotion]=em.m[emotion].*(1-lr).+collect(vad).*lr)
+function learn!(em::AdaptiveEmotionMap, emotion::String, vad::NTuple{3,Float64}, lr = 0.01)
+    haskey(em.m, emotion) && (em.m[emotion]=em.m[emotion] .* (1-lr) .+ collect(vad) .* lr)
 end
-function decay_toward_base!(em::AdaptiveEmotionMap, rate=0.005)
-    for (e,vec) in em.m
-        haskey(EMOTION_BASE,e) &&
-            (em.m[e]=vec.*(1-rate).+EMOTION_BASE[e].*rate)
+function decay_toward_base!(em::AdaptiveEmotionMap, rate = 0.005)
+    for (e, vec) in em.m
+        haskey(EMOTION_BASE, e) && (em.m[e]=vec .* (1-rate) .+ EMOTION_BASE[e] .* rate)
     end
 end
 
 # --- Plutchik Wheel -------------------------------------------------------
 
-const PLUTCHIK = Dict("радість"=>"Радість","смуток"=>"Смуток","страх"=>"Страх",
-    "гнів"=>"Гнів","здивування"=>"Здивування","відраза"=>"Огида",
-    "очікування"=>"Очікування","довіра"=>"Довіра","жах"=>"Жах","захват"=>"Захват",
-    "любов"=>"Любов","покірність"=>"Покірність","оціпеніння"=>"Оціпеніння",
-    "горе"=>"Горе","агресія"=>"Агресія","оптимізм"=>"Оптимізм",
-    "ремствування"=>"Ремствування","гордість"=>"Гордість","каяття"=>"Каяття",
-    "провина"=>"Провина","зневага"=>"Зневага","нейтральний"=>"Нейтральний")
+const PLUTCHIK = Dict(
+    "радість"=>"Радість",
+    "смуток"=>"Смуток",
+    "страх"=>"Страх",
+    "гнів"=>"Гнів",
+    "здивування"=>"Здивування",
+    "відраза"=>"Огида",
+    "очікування"=>"Очікування",
+    "довіра"=>"Довіра",
+    "жах"=>"Жах",
+    "захват"=>"Захват",
+    "любов"=>"Любов",
+    "покірність"=>"Покірність",
+    "оціпеніння"=>"Оціпеніння",
+    "горе"=>"Горе",
+    "агресія"=>"Агресія",
+    "оптимізм"=>"Оптимізм",
+    "ремствування"=>"Ремствування",
+    "гордість"=>"Гордість",
+    "каяття"=>"Каяття",
+    "провина"=>"Провина",
+    "зневага"=>"Зневага",
+    "нейтральний"=>"Нейтральний",
+)
 
 plutchik_name(emotion::String) = get(PLUTCHIK, emotion, emotion)
 
@@ -774,52 +983,73 @@ plutchik_name(emotion::String) = get(PLUTCHIK, emotion, emotion)
 mutable struct CoreMemory
     filepath::String
     total_flashes::Int
-    sessions::Vector{NamedTuple{(:date,:flash_end),Tuple{String,Int}}}
+    sessions::Vector{NamedTuple{(:date, :flash_end),Tuple{String,Int}}}
     created_at::String
 end
-CoreMemory(fp::String="anima_core_memory.json") =
-    CoreMemory(fp, 0, NamedTuple{(:date,:flash_end),Tuple{String,Int}}[], now_str())
+CoreMemory(fp::String = "anima_core_memory.json") =
+    CoreMemory(fp, 0, NamedTuple{(:date, :flash_end),Tuple{String,Int}}[], now_str())
 
-function core_save!(cm::CoreMemory, p::Personality, to::TemporalOrientation,
-                    gm::GenerativeModel, hg::HomeostaticGoals,
-                    hb::HeartbeatCore, ii::InteroceptiveInference,
-                    ea::ExistentialAnchor, flash_count::Int)
+function core_save!(
+    cm::CoreMemory,
+    p::Personality,
+    to::TemporalOrientation,
+    gm::GenerativeModel,
+    hg::HomeostaticGoals,
+    hb::HeartbeatCore,
+    ii::InteroceptiveInference,
+    ea::ExistentialAnchor,
+    flash_count::Int,
+)
     cm.total_flashes = flash_count
-    push!(cm.sessions, (date=now_str(), flash_end=flash_count))
-    length(cm.sessions)>100 && (cm.sessions=cm.sessions[end-99:end])
-    data = Dict("version"=>"anima_v13_core","created_at"=>cm.created_at,
-        "total_flashes"=>cm.total_flashes,"sessions"=>cm.sessions,
+    push!(cm.sessions, (date = now_str(), flash_end = flash_count))
+    length(cm.sessions)>100 && (cm.sessions=cm.sessions[(end-99):end])
+    data = Dict(
+        "version"=>"anima_v13_core",
+        "created_at"=>cm.created_at,
+        "total_flashes"=>cm.total_flashes,
+        "sessions"=>cm.sessions,
         "personality"=>personality_to_dict(p),
         "temporal_orientation"=>to_to_json(to),
         "generative_model"=>gm_to_json(gm),
         "homeostatic_goals"=>hg_to_json(hg),
         "heartbeat"=>hb_to_json(hb),
         "interoception"=>intero_to_json(ii),
-        "existential_anchor"=>anchor_to_json(ea))
+        "existential_anchor"=>anchor_to_json(ea),
+    )
     _tmp = cm.filepath * ".tmp"
-    open(_tmp,"w") do f; JSON3.write(f,data); end
-    mv(_tmp, cm.filepath; force=true)
+    open(_tmp, "w") do f
+        ;
+        JSON3.write(f, data);
+    end
+    mv(_tmp, cm.filepath; force = true)
 end
 
-function core_load!(cm::CoreMemory, p::Personality, to::TemporalOrientation,
-                    gm::GenerativeModel, hg::HomeostaticGoals,
-                    hb::HeartbeatCore, ii::InteroceptiveInference,
-                    ea::ExistentialAnchor)::Int
+function core_load!(
+    cm::CoreMemory,
+    p::Personality,
+    to::TemporalOrientation,
+    gm::GenerativeModel,
+    hg::HomeostaticGoals,
+    hb::HeartbeatCore,
+    ii::InteroceptiveInference,
+    ea::ExistentialAnchor,
+)::Int
     isfile(cm.filepath) || (println("  [CORE] Нова Anima."); return 0)
     try
-        raw=JSON3.read(read(cm.filepath,String))
-        d=Dict{String,Any}(String(k)=>v for (k,v) in raw)
-        haskey(d,"personality")          && personality_from_dict!(p, d["personality"])
-        haskey(d,"temporal_orientation") && to_from_json!(to, d["temporal_orientation"])
-        haskey(d,"generative_model")     && gm_from_json!(gm, d["generative_model"])
-        haskey(d,"homeostatic_goals")    && hg_from_json!(hg, d["homeostatic_goals"])
-        haskey(d,"heartbeat")            && hb_from_json!(hb, d["heartbeat"])
-        haskey(d,"interoception")        && intero_from_json!(ii, d["interoception"])
-        haskey(d,"existential_anchor")   && anchor_from_json!(ea, d["existential_anchor"])
-        cm.total_flashes = Int(get(d,"total_flashes",0))
+        raw=JSON3.read(read(cm.filepath, String))
+        d=Dict{String,Any}(String(k)=>v for (k, v) in raw)
+        haskey(d, "personality") && personality_from_dict!(p, d["personality"])
+        haskey(d, "temporal_orientation") && to_from_json!(to, d["temporal_orientation"])
+        haskey(d, "generative_model") && gm_from_json!(gm, d["generative_model"])
+        haskey(d, "homeostatic_goals") && hg_from_json!(hg, d["homeostatic_goals"])
+        haskey(d, "heartbeat") && hb_from_json!(hb, d["heartbeat"])
+        haskey(d, "interoception") && intero_from_json!(ii, d["interoception"])
+        haskey(d, "existential_anchor") && anchor_from_json!(ea, d["existential_anchor"])
+        cm.total_flashes = Int(get(d, "total_flashes", 0))
         println("  [CORE] Завантажено. Спалахів: $(cm.total_flashes).")
         cm.total_flashes
     catch e
-        println("  [CORE] Помилка: $e"); 0
+        println("  [CORE] Помилка: $e");
+        0
     end
 end

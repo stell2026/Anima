@@ -21,50 +21,50 @@ using Tables
 
 # --- Константи ------------------------------------------------------------
 
-const MEM_IMPORTANCE_THRESHOLD  = 0.20
-const MEM_CORE_MAX              = 500
-const MEM_DECAY_RATE            = 0.001
-const MEM_MIN_WEIGHT            = 0.05
+const MEM_IMPORTANCE_THRESHOLD = 0.20
+const MEM_CORE_MAX = 500
+const MEM_DECAY_RATE = 0.001
+const MEM_MIN_WEIGHT = 0.05
 const MEM_CONSOLIDATE_THRESHOLD = 0.35
-const MEM_TOPK_INFLUENCE        = 10
-const MEM_AFFECT_DECAY          = 0.995
-const MEM_LINK_SIMILARITY_THR   = 0.75
-const MEM_MAX_NT_BIAS           = 0.08
-const MEM_MAX_PRED_BIAS         = 0.15
-const MEM_MAX_STIM_BIAS         = 0.12
+const MEM_TOPK_INFLUENCE = 10
+const MEM_AFFECT_DECAY = 0.995
+const MEM_LINK_SIMILARITY_THR = 0.75
+const MEM_MAX_NT_BIAS = 0.08
+const MEM_MAX_PRED_BIAS = 0.15
+const MEM_MAX_STIM_BIAS = 0.12
 
-const DIALOG_SUMMARY_THR     = 0.35
-const DIALOG_SUMMARY_MAX     = 200
-const DIALOG_SUMMARY_RECALL  = 5
+const DIALOG_SUMMARY_THR = 0.35
+const DIALOG_SUMMARY_MAX = 200
+const DIALOG_SUMMARY_RECALL = 5
 
 const PHENOTYPE_INFLUENCE_THR = 0.35
-const PHENOTYPE_STEP          = 0.001
-const PHENOTYPE_DECAY         = 0.9998
+const PHENOTYPE_STEP = 0.003
+const PHENOTYPE_DECAY = 0.9998
 
-const EPISODIC_VEC_FIELDS = [:arousal, :valence, :tension, :phi,
-                              :prediction_error, :self_impact]
-const SIMILAR_STATE_THR   = 0.88
+const EPISODIC_VEC_FIELDS =
+    [:arousal, :valence, :tension, :phi, :prediction_error, :self_impact]
+const SIMILAR_STATE_THR = 0.88
 const SIMILAR_STATE_TOP_N = 3
 
-_fdb(x, d::Float64=0.0) = (ismissing(x) || isnothing(x)) ? d : Float64(x)
+_fdb(x, d::Float64 = 0.0) = (ismissing(x) || isnothing(x)) ? d : Float64(x)
 
 # --- MemoryDB -------------------------------------------------------------
 
 mutable struct MemoryDB
     db::SQLite.DB
     path::String
-    _affect_cache::Dict{String, Float64}
-    _semantic_cache::Dict{String, Float64}
+    _affect_cache::Dict{String,Float64}
+    _semantic_cache::Dict{String,Float64}
     _cache_dirty::Bool
     _cache_flash::Int
     _rolling_arousal::Float64
     _rolling_pe::Float64
     _rolling_n::Int
-    _loop_task::Union{Task, Nothing}
+    _loop_task::Union{Task,Nothing}
     _loop_stop::Threads.Atomic{Bool}
 end
 
-function MemoryDB(db_path::String=joinpath("memory", "anima.db"))
+function MemoryDB(db_path::String = joinpath("memory", "anima.db"))
     dir = dirname(db_path)
     isempty(dir) || isdir(dir) || mkpath(dir)
 
@@ -72,11 +72,19 @@ function MemoryDB(db_path::String=joinpath("memory", "anima.db"))
     SQLite.busy_timeout(db, 5000)
     _init_schema!(db)
 
-    mem = MemoryDB(db, db_path,
-        Dict{String,Float64}(), Dict{String,Float64}(),
-        true, 0,
-        0.3, 0.3, 0,
-        nothing, Threads.Atomic{Bool}(false))
+    mem = MemoryDB(
+        db,
+        db_path,
+        Dict{String,Float64}(),
+        Dict{String,Float64}(),
+        true,
+        0,
+        0.3,
+        0.3,
+        0,
+        nothing,
+        Threads.Atomic{Bool}(false),
+    )
 
     _refresh_cache!(mem)
     println("  [MEM] База пам'яті: $db_path")
@@ -86,118 +94,158 @@ end
 # --- Schema ---------------------------------------------------------------
 
 function _init_schema!(db::SQLite.DB)
-    SQLite.execute(db, """
-    CREATE TABLE IF NOT EXISTS episodic_memory (
-        id              INTEGER PRIMARY KEY AUTOINCREMENT,
-        flash           INTEGER NOT NULL,
-        timestamp       REAL    NOT NULL,
-        emotion         TEXT    NOT NULL DEFAULT '',
-        arousal         REAL    NOT NULL DEFAULT 0.0,
-        valence         REAL    NOT NULL DEFAULT 0.0,
-        prediction_error REAL   NOT NULL DEFAULT 0.0,
-        self_impact     REAL    NOT NULL DEFAULT 0.0,
-        tension         REAL    NOT NULL DEFAULT 0.0,
-        phi             REAL    NOT NULL DEFAULT 0.0,
-        weight          REAL    NOT NULL DEFAULT 0.5,
-        resistance      REAL    NOT NULL DEFAULT 0.0,
-        signature       REAL    NOT NULL DEFAULT 0.0
-    );
-    """)
+    SQLite.execute(
+        db,
+        """
+CREATE TABLE IF NOT EXISTS episodic_memory (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    flash           INTEGER NOT NULL,
+    timestamp       REAL    NOT NULL,
+    emotion         TEXT    NOT NULL DEFAULT '',
+    arousal         REAL    NOT NULL DEFAULT 0.0,
+    valence         REAL    NOT NULL DEFAULT 0.0,
+    prediction_error REAL   NOT NULL DEFAULT 0.0,
+    self_impact     REAL    NOT NULL DEFAULT 0.0,
+    tension         REAL    NOT NULL DEFAULT 0.0,
+    phi             REAL    NOT NULL DEFAULT 0.0,
+    weight          REAL    NOT NULL DEFAULT 0.5,
+    resistance      REAL    NOT NULL DEFAULT 0.0,
+    signature       REAL    NOT NULL DEFAULT 0.0
+);
+""",
+    )
 
-    SQLite.execute(db, "CREATE INDEX IF NOT EXISTS idx_episodic_weight ON episodic_memory(weight DESC);")
-    SQLite.execute(db, "CREATE INDEX IF NOT EXISTS idx_episodic_flash ON episodic_memory(flash DESC);")
-    SQLite.execute(db, "CREATE INDEX IF NOT EXISTS idx_episodic_emotion ON episodic_memory(emotion, weight DESC);")
+    SQLite.execute(
+        db,
+        "CREATE INDEX IF NOT EXISTS idx_episodic_weight ON episodic_memory(weight DESC);",
+    )
+    SQLite.execute(
+        db,
+        "CREATE INDEX IF NOT EXISTS idx_episodic_flash ON episodic_memory(flash DESC);",
+    )
+    SQLite.execute(
+        db,
+        "CREATE INDEX IF NOT EXISTS idx_episodic_emotion ON episodic_memory(emotion, weight DESC);",
+    )
 
-    SQLite.execute(db, """
-    CREATE TABLE IF NOT EXISTS memory_links (
-        id_a     INTEGER NOT NULL,
-        id_b     INTEGER NOT NULL,
-        strength REAL    NOT NULL DEFAULT 0.0,
-        co_occur INTEGER NOT NULL DEFAULT 1,
-        PRIMARY KEY (id_a, id_b),
-        FOREIGN KEY (id_a) REFERENCES episodic_memory(id) ON DELETE CASCADE,
-        FOREIGN KEY (id_b) REFERENCES episodic_memory(id) ON DELETE CASCADE
-    );
-    """)
+    SQLite.execute(
+        db,
+        """
+CREATE TABLE IF NOT EXISTS memory_links (
+    id_a     INTEGER NOT NULL,
+    id_b     INTEGER NOT NULL,
+    strength REAL    NOT NULL DEFAULT 0.0,
+    co_occur INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (id_a, id_b),
+    FOREIGN KEY (id_a) REFERENCES episodic_memory(id) ON DELETE CASCADE,
+    FOREIGN KEY (id_b) REFERENCES episodic_memory(id) ON DELETE CASCADE
+);
+""",
+    )
 
-    SQLite.execute(db, """
-    CREATE TABLE IF NOT EXISTS semantic_memory (
-        key     TEXT    PRIMARY KEY,
-        value   REAL    NOT NULL DEFAULT 0.0,
-        source  TEXT    NOT NULL DEFAULT 'accumulated',
-        updated INTEGER NOT NULL DEFAULT 0
-    );
-    """)
+    SQLite.execute(
+        db,
+        """
+CREATE TABLE IF NOT EXISTS semantic_memory (
+    key     TEXT    PRIMARY KEY,
+    value   REAL    NOT NULL DEFAULT 0.0,
+    source  TEXT    NOT NULL DEFAULT 'accumulated',
+    updated INTEGER NOT NULL DEFAULT 0
+);
+""",
+    )
 
-    SQLite.execute(db, """
-    CREATE TABLE IF NOT EXISTS affect_state (
-        name    TEXT    PRIMARY KEY,
-        value   REAL    NOT NULL DEFAULT 0.0,
-        updated INTEGER NOT NULL DEFAULT 0
-    );
-    """)
+    SQLite.execute(
+        db,
+        """
+CREATE TABLE IF NOT EXISTS affect_state (
+    name    TEXT    PRIMARY KEY,
+    value   REAL    NOT NULL DEFAULT 0.0,
+    updated INTEGER NOT NULL DEFAULT 0
+);
+""",
+    )
 
-    SQLite.execute(db, """
-    CREATE TABLE IF NOT EXISTS latent_buffer (
-        id          INTEGER PRIMARY KEY AUTOINCREMENT,
-        importance  REAL    NOT NULL,
-        valence     REAL    NOT NULL DEFAULT 0.0,
-        tension     REAL    NOT NULL DEFAULT 0.0,
-        flash       INTEGER NOT NULL DEFAULT 0,
-        timestamp   REAL    NOT NULL
-    );
-    """)
+    SQLite.execute(
+        db,
+        """
+CREATE TABLE IF NOT EXISTS latent_buffer (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    importance  REAL    NOT NULL,
+    valence     REAL    NOT NULL DEFAULT 0.0,
+    tension     REAL    NOT NULL DEFAULT 0.0,
+    flash       INTEGER NOT NULL DEFAULT 0,
+    timestamp   REAL    NOT NULL
+);
+""",
+    )
 
-    SQLite.execute(db, """
-    CREATE TABLE IF NOT EXISTS dialog_summaries (
-        id            INTEGER PRIMARY KEY AUTOINCREMENT,
-        flash         INTEGER NOT NULL,
-        timestamp     REAL    NOT NULL,
-        user_text     TEXT    NOT NULL DEFAULT '',
-        anima_text    TEXT    NOT NULL DEFAULT '',
-        emotion       TEXT    NOT NULL DEFAULT '',
-        weight        REAL    NOT NULL DEFAULT 0.0,
-        phi           REAL    NOT NULL DEFAULT 0.0,
-        valence       REAL    NOT NULL DEFAULT 0.0,
-        disclosure    TEXT    NOT NULL DEFAULT 'guarded'
-    );
-    """)
+    SQLite.execute(
+        db,
+        """
+CREATE TABLE IF NOT EXISTS dialog_summaries (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    flash         INTEGER NOT NULL,
+    timestamp     REAL    NOT NULL,
+    user_text     TEXT    NOT NULL DEFAULT '',
+    anima_text    TEXT    NOT NULL DEFAULT '',
+    emotion       TEXT    NOT NULL DEFAULT '',
+    weight        REAL    NOT NULL DEFAULT 0.0,
+    phi           REAL    NOT NULL DEFAULT 0.0,
+    valence       REAL    NOT NULL DEFAULT 0.0,
+    disclosure    TEXT    NOT NULL DEFAULT 'guarded'
+);
+""",
+    )
 
-    SQLite.execute(db, "CREATE INDEX IF NOT EXISTS idx_dialog_weight ON dialog_summaries(weight DESC);")
-    SQLite.execute(db, "CREATE INDEX IF NOT EXISTS idx_dialog_flash ON dialog_summaries(flash DESC);")
+    SQLite.execute(
+        db,
+        "CREATE INDEX IF NOT EXISTS idx_dialog_weight ON dialog_summaries(weight DESC);",
+    )
+    SQLite.execute(
+        db,
+        "CREATE INDEX IF NOT EXISTS idx_dialog_flash ON dialog_summaries(flash DESC);",
+    )
 
-    SQLite.execute(db, """
-    CREATE TABLE IF NOT EXISTS personality_traits (
-        trait          TEXT    PRIMARY KEY,
-        score          REAL    NOT NULL DEFAULT 0.0,
-        evidence_count INTEGER NOT NULL DEFAULT 0,
-        valence_bias   REAL    NOT NULL DEFAULT 0.0,
-        last_updated   INTEGER NOT NULL DEFAULT 0
-    );
-    """)
+    SQLite.execute(
+        db,
+        """
+CREATE TABLE IF NOT EXISTS personality_traits (
+    trait          TEXT    PRIMARY KEY,
+    score          REAL    NOT NULL DEFAULT 0.0,
+    evidence_count INTEGER NOT NULL DEFAULT 0,
+    valence_bias   REAL    NOT NULL DEFAULT 0.0,
+    last_updated   INTEGER NOT NULL DEFAULT 0
+);
+""",
+    )
 
-    SQLite.execute(db, "CREATE INDEX IF NOT EXISTS idx_traits_score ON personality_traits(score DESC);")
+    SQLite.execute(
+        db,
+        "CREATE INDEX IF NOT EXISTS idx_traits_score ON personality_traits(score DESC);",
+    )
 end
 
 # --- Кеш ------------------------------------------------------------------
 
 function _refresh_cache!(mem::MemoryDB)
     empty!(mem._affect_cache)
-    for row in Tables.rowtable(DBInterface.execute(mem.db,
-            "SELECT name, value FROM affect_state"))
+    for row in
+        Tables.rowtable(DBInterface.execute(mem.db, "SELECT name, value FROM affect_state"))
         mem._affect_cache[row.name] = row.value
     end
 
     empty!(mem._semantic_cache)
-    for row in Tables.rowtable(DBInterface.execute(mem.db,
-            "SELECT key, value FROM semantic_memory"))
+    for row in Tables.rowtable(
+        DBInterface.execute(mem.db, "SELECT key, value FROM semantic_memory"),
+    )
         mem._semantic_cache[row.key] = row.value
     end
 
     mem._cache_dirty = false
 end
 
-function _maybe_refresh!(mem::MemoryDB, current_flash::Int; every::Int=10)
+function _maybe_refresh!(mem::MemoryDB, current_flash::Int; every::Int = 10)
     if mem._cache_dirty || (current_flash - mem._cache_flash) >= every
         _refresh_cache!(mem)
         mem._cache_flash = current_flash
@@ -206,33 +254,37 @@ end
 
 # --- Запис події ----------------------------------------------------------
 
-function memory_write_event!(mem::MemoryDB,
-                              flash::Int,
-                              emotion::String,
-                              arousal::Float64,
-                              valence::Float64,
-                              prediction_error::Float64,
-                              self_impact::Float64,
-                              tension::Float64,
-                              phi::Float64)
+function memory_write_event!(
+    mem::MemoryDB,
+    flash::Int,
+    emotion::String,
+    arousal::Float64,
+    valence::Float64,
+    prediction_error::Float64,
+    self_impact::Float64,
+    tension::Float64,
+    phi::Float64,
+)
 
     α = 0.15
     mem._rolling_arousal = mem._rolling_arousal * (1-α) + arousal * α
-    mem._rolling_pe      = mem._rolling_pe      * (1-α) + prediction_error * α
-    mem._rolling_n      += 1
+    mem._rolling_pe = mem._rolling_pe * (1-α) + prediction_error * α
+    mem._rolling_n += 1
 
     current_stress = get(mem._affect_cache, "stress", 0.0)
     stress_amp = 1.0 + current_stress * 0.6
 
     arousal_surprise = abs(arousal - mem._rolling_arousal)
-    pe_surprise      = abs(prediction_error - mem._rolling_pe)
+    pe_surprise = abs(prediction_error - mem._rolling_pe)
 
-    imp = (0.25 * prediction_error +
-           0.20 * arousal +
-           0.20 * abs(valence) +
-           0.15 * self_impact +
-           0.10 * arousal_surprise +
-           0.10 * pe_surprise)
+    imp = (
+        0.25 * prediction_error +
+        0.20 * arousal +
+        0.20 * abs(valence) +
+        0.15 * self_impact +
+        0.10 * arousal_surprise +
+        0.10 * pe_surprise
+    )
     imp = clamp(imp * stress_amp, 0.0, 1.0)
 
     dynamic_threshold = MEM_IMPORTANCE_THRESHOLD * (1.0 - current_stress * 0.3)
@@ -240,89 +292,127 @@ function memory_write_event!(mem::MemoryDB,
 
     ts = time()
 
-    resistance = clamp(self_impact * 0.6 + abs(valence) * 0.3 * (valence < 0 ? 1.4 : 0.7), 0.0, 1.0)
+    resistance =
+        clamp(self_impact * 0.6 + abs(valence) * 0.3 * (valence < 0 ? 1.4 : 0.7), 0.0, 1.0)
     signature = arousal * 0.5 + prediction_error * 0.3 + abs(self_impact) * 0.2
 
     if imp < dynamic_threshold && imp > 0.05
-        DBInterface.execute(mem.db, """
-        INSERT INTO latent_buffer (importance, valence, tension, flash, timestamp)
-        VALUES (?, ?, ?, ?, ?)
-        """, (imp, valence, tension, flash, ts))
+        DBInterface.execute(
+            mem.db,
+            """
+INSERT INTO latent_buffer (importance, valence, tension, flash, timestamp)
+VALUES (?, ?, ?, ?, ?)
+""",
+            (imp, valence, tension, flash, ts),
+        )
     end
 
-    dedup_rows = Tables.rowtable(DBInterface.execute(mem.db, """
-    SELECT id, weight FROM episodic_memory
-    WHERE ABS(signature - ?) < 0.08 AND flash >= ?
-    ORDER BY flash DESC LIMIT 1
-    """, (signature, flash - 3)))
+    dedup_rows = Tables.rowtable(DBInterface.execute(
+        mem.db,
+        """
+SELECT id, weight FROM episodic_memory
+WHERE ABS(signature - ?) < 0.08 AND flash >= ?
+ORDER BY flash DESC LIMIT 1
+""",
+        (signature, flash - 3),
+    ))
 
     dedup_hit = false
     for dr in dedup_rows
         new_w = clamp(_fdb(dr.weight) * 1.15, 0.0, 1.0)
-        DBInterface.execute(mem.db, """
-        UPDATE episodic_memory SET weight = ? WHERE id = ?
-        """, (new_w, dr.id))
+        DBInterface.execute(
+            mem.db,
+            """
+UPDATE episodic_memory SET weight = ? WHERE id = ?
+""",
+            (new_w, dr.id),
+        )
         dedup_hit = true
         break
     end
 
     dedup_hit && return
 
-    DBInterface.execute(mem.db, """
-    INSERT INTO episodic_memory
-        (flash, timestamp, emotion, arousal, valence,
-         prediction_error, self_impact, tension, phi, weight, resistance, signature)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (flash, ts, emotion, arousal, valence,
-          prediction_error, self_impact, tension, phi, imp, resistance, signature))
+    DBInterface.execute(
+        mem.db,
+        """
+INSERT INTO episodic_memory
+    (flash, timestamp, emotion, arousal, valence,
+     prediction_error, self_impact, tension, phi, weight, resistance, signature)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+""",
+        (
+            flash,
+            ts,
+            emotion,
+            arousal,
+            valence,
+            prediction_error,
+            self_impact,
+            tension,
+            phi,
+            imp,
+            resistance,
+            signature,
+        ),
+    )
 
     stress_inc = clamp((tension - 0.3) * 0.4 + (arousal - 0.3) * 0.4, 0.0, 1.0)
     if stress_inc > 0.0
-        _upsert_affect!(mem.db, "stress",
-            stress_inc * imp * 0.005, 0.0, 1.0)
+        _upsert_affect!(mem.db, "stress", stress_inc * imp * 0.005, 0.0, 1.0)
     end
 
     if valence < -0.1 && prediction_error > 0.3
         anxiety_inc = abs(valence) * prediction_error
-        _upsert_affect!(mem.db, "anxiety",
-            anxiety_inc * imp * 0.004, 0.0, 1.0)
+        _upsert_affect!(mem.db, "anxiety", anxiety_inc * imp * 0.004, 0.0, 1.0)
     end
 
     if valence > 0.15 && phi > 0.2
-        _upsert_affect!(mem.db, "motivation_bias",
-            valence * phi * imp * 0.003, 0.0, 1.0)
+        _upsert_affect!(mem.db, "motivation_bias", valence * phi * imp * 0.003, 0.0, 1.0)
     end
 
     mem._cache_dirty = true
 
-    new_id_row = first(Tables.rowtable(DBInterface.execute(mem.db,
-        "SELECT last_insert_rowid() as id")))
+    new_id_row = first(
+        Tables.rowtable(DBInterface.execute(mem.db, "SELECT last_insert_rowid() as id")),
+    )
     new_id = Int(new_id_row.id)
 
-    similar_rows = Tables.rowtable(DBInterface.execute(mem.db, """
-    SELECT id, arousal, valence, tension
-    FROM episodic_memory
-    WHERE id != ? AND weight > 0.3
-    ORDER BY ABS(arousal - ?) + ABS(valence - ?) + ABS(tension - ?) ASC
-    LIMIT 3
-    """, (new_id, arousal, valence, tension)))
+    similar_rows = Tables.rowtable(
+        DBInterface.execute(
+            mem.db,
+            """
+SELECT id, arousal, valence, tension
+FROM episodic_memory
+WHERE id != ? AND weight > 0.3
+ORDER BY ABS(arousal - ?) + ABS(valence - ?) + ABS(tension - ?) ASC
+LIMIT 3
+""",
+            (new_id, arousal, valence, tension),
+        ),
+    )
 
     for sr in similar_rows
-        dist = abs(sr.arousal - arousal) +
-               abs(sr.valence - valence) +
-               abs(sr.tension - tension)
+        dist =
+            abs(sr.arousal - arousal) +
+            abs(sr.valence - valence) +
+            abs(sr.tension - tension)
         sim = clamp(1.0 - dist / 3.0, 0.0, 1.0)
 
         sim < MEM_LINK_SIMILARITY_THR && continue
 
         id_a, id_b = min(new_id, Int(sr.id)), max(new_id, Int(sr.id))
-        DBInterface.execute(mem.db, """
-        INSERT INTO memory_links (id_a, id_b, strength, co_occur)
-        VALUES (?, ?, ?, 1)
-        ON CONFLICT(id_a, id_b) DO UPDATE
-        SET strength = MIN(1.0, (strength * co_occur + ?) / (co_occur + 1)),
-            co_occur = co_occur + 1
-        """, (id_a, id_b, sim, sim))
+        DBInterface.execute(
+            mem.db,
+            """
+INSERT INTO memory_links (id_a, id_b, strength, co_occur)
+VALUES (?, ?, ?, 1)
+ON CONFLICT(id_a, id_b) DO UPDATE
+SET strength = MIN(1.0, (strength * co_occur + ?) / (co_occur + 1)),
+    co_occur = co_occur + 1
+""",
+            (id_a, id_b, sim, sim),
+        )
     end
 
     nothing
@@ -330,29 +420,35 @@ end
 
 # --- Інтеграція з pipeline ------------------------------------------------
 
-function memory_stimulus_bias(mem::MemoryDB,
-                               stim::Dict{String,Float64},
-                               emotion::String,
-                               flash::Int)::Dict{String,Float64}
+function memory_stimulus_bias(
+    mem::MemoryDB,
+    stim::Dict{String,Float64},
+    emotion::String,
+    flash::Int,
+)::Dict{String,Float64}
 
     delta = Dict{String,Float64}()
 
-    rows = Tables.rowtable(DBInterface.execute(mem.db, """
-    SELECT arousal, valence, tension, weight
-    FROM episodic_memory
-    WHERE emotion = ? AND weight > 0.4
-    ORDER BY flash DESC
-    LIMIT 5
-    """, (emotion,)))
+    rows = Tables.rowtable(DBInterface.execute(
+        mem.db,
+        """
+SELECT arousal, valence, tension, weight
+FROM episodic_memory
+WHERE emotion = ? AND weight > 0.4
+ORDER BY flash DESC
+LIMIT 5
+""",
+        (emotion,),
+    ))
 
     total_w = 0.0
-    bias_tension    = 0.0
-    bias_arousal    = 0.0
-    bias_valence    = 0.0
+    bias_tension = 0.0
+    bias_arousal = 0.0
+    bias_valence = 0.0
 
     for row in rows
         w = row.weight
-        total_w      += w
+        total_w += w
         bias_tension += row.tension * w
         bias_arousal += row.arousal * w
         bias_valence += row.valence * w
@@ -367,21 +463,25 @@ function memory_stimulus_bias(mem::MemoryDB,
         delta["tension"] = clamp(bias_tension * scale, 0.0, MEM_MAX_STIM_BIAS)
     end
     if abs(bias_arousal) > 0.1
-        delta["arousal"] = clamp(bias_arousal * scale,
-                                  -MEM_MAX_STIM_BIAS, MEM_MAX_STIM_BIAS)
+        delta["arousal"] =
+            clamp(bias_arousal * scale, -MEM_MAX_STIM_BIAS, MEM_MAX_STIM_BIAS)
     end
 
-    avoid_rows = Tables.rowtable(DBInterface.execute(mem.db, """
-    SELECT COALESCE(AVG(valence),    0.0) as avg_val,
-           COALESCE(AVG(self_impact),0.0) as avg_imp,
-           COALESCE(AVG(weight),     0.0) as avg_w
-    FROM episodic_memory
-    WHERE emotion = ? AND valence < -0.2 AND self_impact > 0.5 AND weight > 0.45
-    """, (emotion,)))
+    avoid_rows = Tables.rowtable(DBInterface.execute(
+        mem.db,
+        """
+SELECT COALESCE(AVG(valence),    0.0) as avg_val,
+       COALESCE(AVG(self_impact),0.0) as avg_imp,
+       COALESCE(AVG(weight),     0.0) as avg_w
+FROM episodic_memory
+WHERE emotion = ? AND valence < -0.2 AND self_impact > 0.5 AND weight > 0.45
+""",
+        (emotion,),
+    ))
     for ar in avoid_rows
         avg_val = Float64(ar.avg_val)
         avg_imp = Float64(ar.avg_imp)
-        avg_w   = Float64(ar.avg_w)
+        avg_w = Float64(ar.avg_w)
         avg_w < 0.01 && break
 
         avoidance = clamp(abs(avg_val) * avg_imp * avg_w * 0.4, 0.0, 0.08)
@@ -397,18 +497,16 @@ end
 function memory_nt_baseline!(mem::MemoryDB, nt, flash::Int)
     _maybe_refresh!(mem, flash)
 
-    stress    = get(mem._affect_cache, "stress",           0.0)
-    anxiety   = get(mem._affect_cache, "anxiety",          0.0)
-    mot_bias  = get(mem._affect_cache, "motivation_bias",  0.0)
-    resentment= get(mem._affect_cache, "resentment",       0.0)
+    stress = get(mem._affect_cache, "stress", 0.0)
+    anxiety = get(mem._affect_cache, "anxiety", 0.0)
+    mot_bias = get(mem._affect_cache, "motivation_bias", 0.0)
+    resentment = get(mem._affect_cache, "resentment", 0.0)
 
     if stress > 0.2
-        push_n  = clamp((stress - 0.2) * MEM_MAX_NT_BIAS * 2.0,
-                        0.0, MEM_MAX_NT_BIAS)
-        pull_s  = clamp((stress - 0.2) * MEM_MAX_NT_BIAS * 1.5,
-                        0.0, MEM_MAX_NT_BIAS)
+        push_n = clamp((stress - 0.2) * MEM_MAX_NT_BIAS * 2.0, 0.0, MEM_MAX_NT_BIAS)
+        pull_s = clamp((stress - 0.2) * MEM_MAX_NT_BIAS * 1.5, 0.0, MEM_MAX_NT_BIAS)
         nt.noradrenaline = clamp(nt.noradrenaline + push_n, 0.0, 1.0)
-        nt.serotonin     = clamp(nt.serotonin     - pull_s, 0.0, 1.0)
+        nt.serotonin = clamp(nt.serotonin - pull_s, 0.0, 1.0)
     end
 
     if anxiety > 0.2
@@ -438,7 +536,7 @@ function memory_pred_bias(mem::MemoryDB, pred_error::Float64, flash::Int)::Float
 end
 
 function memory_self_update!(mem::MemoryDB, sbg, flash::Int)
-    _maybe_refresh!(mem, flash; every=20)
+    _maybe_refresh!(mem, flash; every = 20)
 
     instability = get(mem._semantic_cache, "I_am_unstable", 0.0)
     if instability > 0.4
@@ -456,7 +554,7 @@ function memory_self_update!(mem::MemoryDB, sbg, flash::Int)
 end
 
 function memory_crisis_load(mem::MemoryDB, flash::Int)::Float64
-    _maybe_refresh!(mem, flash; every=15)
+    _maybe_refresh!(mem, flash; every = 15)
     fragility = get(mem._semantic_cache, "structural_fragility", 0.0)
     fragility < 0.15 && return 0.0
     return -clamp((fragility - 0.15) * 0.05, 0.0, 0.04)
@@ -464,7 +562,7 @@ end
 
 # --- Фоновий процес --------------------------------------------------------
 
-function start_memory_loop!(mem::MemoryDB; interval::Float64=60.0)
+function start_memory_loop!(mem::MemoryDB; interval::Float64 = 60.0)
     mem._loop_stop[] = false
 
     task = Threads.@spawn begin
@@ -494,7 +592,10 @@ end
 function stop_memory_loop!(mem::MemoryDB)
     mem._loop_stop[] = true
     if !isnothing(mem._loop_task)
-        try timedwait(() -> istaskdone(mem._loop_task), 3.0) catch end
+        try
+            timedwait(() -> istaskdone(mem._loop_task), 3.0)
+        catch
+        end
     end
 end
 
@@ -503,14 +604,22 @@ end
 function _memory_decay!(mem::MemoryDB)
     DBInterface.execute(mem.db, "BEGIN TRANSACTION")
     try
-        DBInterface.execute(mem.db, """
-        UPDATE episodic_memory
-        SET weight = weight * exp(? * (1.0 - resistance * 0.7))
-        """, (-MEM_DECAY_RATE,))
+        DBInterface.execute(
+            mem.db,
+            """
+UPDATE episodic_memory
+SET weight = weight * exp(? * (1.0 - resistance * 0.7))
+""",
+            (-MEM_DECAY_RATE,),
+        )
 
-        DBInterface.execute(mem.db, """
-        UPDATE affect_state SET value = value * ?  WHERE value > 0.005
-        """, (MEM_AFFECT_DECAY,))
+        DBInterface.execute(
+            mem.db,
+            """
+UPDATE affect_state SET value = value * ?  WHERE value > 0.005
+""",
+            (MEM_AFFECT_DECAY,),
+        )
 
         DBInterface.execute(mem.db, "COMMIT")
     catch e
@@ -523,22 +632,33 @@ end
 function _memory_prune!(mem::MemoryDB)
     DBInterface.execute(mem.db, "BEGIN TRANSACTION")
     try
-        DBInterface.execute(mem.db, """
-        DELETE FROM episodic_memory WHERE weight < ?
-        """, (MEM_MIN_WEIGHT,))
+        DBInterface.execute(
+            mem.db,
+            """
+DELETE FROM episodic_memory WHERE weight < ?
+""",
+            (MEM_MIN_WEIGHT,),
+        )
 
-        count_row = first(Tables.rowtable(DBInterface.execute(mem.db,
-            "SELECT COUNT(*) as n FROM episodic_memory")))
+        count_row = first(
+            Tables.rowtable(
+                DBInterface.execute(mem.db, "SELECT COUNT(*) as n FROM episodic_memory"),
+            ),
+        )
         n = ismissing(count_row.n) ? 0 : Int(count_row.n)
 
         if n > MEM_CORE_MAX
-            DBInterface.execute(mem.db, """
-            DELETE FROM episodic_memory
-            WHERE id IN (
-                SELECT id FROM episodic_memory
-                ORDER BY weight ASC LIMIT ?
+            DBInterface.execute(
+                mem.db,
+                """
+DELETE FROM episodic_memory
+WHERE id IN (
+    SELECT id FROM episodic_memory
+    ORDER BY weight ASC LIMIT ?
+)
+""",
+                (n - MEM_CORE_MAX,),
             )
-            """, (n - MEM_CORE_MAX,))
         end
         DBInterface.execute(mem.db, "COMMIT")
     catch e
@@ -551,88 +671,125 @@ end
 function _memory_consolidate!(mem::MemoryDB)
     DBInterface.execute(mem.db, "BEGIN TRANSACTION")
     try
-        rows = Tables.rowtable(DBInterface.execute(mem.db, """
-        SELECT CAST(arousal          AS REAL) as arousal,
-               CAST(valence          AS REAL) as valence,
-               CAST(prediction_error AS REAL) as prediction_error,
-               CAST(self_impact      AS REAL) as self_impact,
-               CAST(tension          AS REAL) as tension,
-               CAST(phi              AS REAL) as phi,
-               CAST(weight           AS REAL) as weight
-        FROM episodic_memory
-        WHERE weight > ?
-        ORDER BY weight DESC
-        LIMIT ?
-        """, (MEM_CONSOLIDATE_THRESHOLD, MEM_TOPK_INFLUENCE)))
+        rows = Tables.rowtable(
+            DBInterface.execute(
+                mem.db,
+                """
+SELECT CAST(arousal          AS REAL) as arousal,
+       CAST(valence          AS REAL) as valence,
+       CAST(prediction_error AS REAL) as prediction_error,
+       CAST(self_impact      AS REAL) as self_impact,
+       CAST(tension          AS REAL) as tension,
+       CAST(phi              AS REAL) as phi,
+       CAST(weight           AS REAL) as weight
+FROM episodic_memory
+WHERE weight > ?
+ORDER BY weight DESC
+LIMIT ?
+""",
+                (MEM_CONSOLIDATE_THRESHOLD, MEM_TOPK_INFLUENCE),
+            ),
+        )
 
         n = 0
-        sum_arousal = 0.0; sum_pe = 0.0; sum_tension = 0.0
-        sum_valence = 0.0; sum_impact = 0.0; sum_phi = 0.0
+        sum_arousal = 0.0;
+        sum_pe = 0.0;
+        sum_tension = 0.0
+        sum_valence = 0.0;
+        sum_impact = 0.0;
+        sum_phi = 0.0
         sum_w = 0.0
 
         all_rows = collect(rows)
         for row in all_rows
             w = _fdb(row.weight, 0.0)
             w <= 0.0 && continue
-            sum_w       += w
-            sum_arousal += _fdb(row.arousal)          * w
-            sum_pe      += _fdb(row.prediction_error) * w
-            sum_tension += _fdb(row.tension)          * w
-            sum_valence += _fdb(row.valence)           * w
-            sum_impact  += _fdb(row.self_impact)       * w
-            sum_phi     += _fdb(row.phi)               * w
+            sum_w += w
+            sum_arousal += _fdb(row.arousal) * w
+            sum_pe += _fdb(row.prediction_error) * w
+            sum_tension += _fdb(row.tension) * w
+            sum_valence += _fdb(row.valence) * w
+            sum_impact += _fdb(row.self_impact) * w
+            sum_phi += _fdb(row.phi) * w
             n += 1
         end
 
         n == 0 && (DBInterface.execute(mem.db, "COMMIT"); return)
 
-        inv_w       = 1.0 / sum_w
+        inv_w = 1.0 / sum_w
         avg_arousal = sum_arousal * inv_w
-        avg_pe      = sum_pe      * inv_w
+        avg_pe = sum_pe * inv_w
         avg_tension = sum_tension * inv_w
         avg_valence = sum_valence * inv_w
-        avg_impact  = sum_impact  * inv_w
-        avg_phi     = sum_phi     * inv_w
+        avg_impact = sum_impact * inv_w
+        avg_phi = sum_phi * inv_w
 
         evidence_factor = clamp(sqrt(n / 10.0), 0.3, 2.0)
 
-        instability_signal = (avg_arousal * 0.4 + avg_pe * 0.4 +
-                               (avg_tension - 0.5) * 0.2)
+        instability_signal = (avg_arousal * 0.4 + avg_pe * 0.4 + (avg_tension - 0.5) * 0.2)
         instability_signal = clamp(instability_signal, 0.0, 1.0)
         if instability_signal > 0.3
-            _upsert_semantic!(mem.db, "I_am_unstable",
+            _upsert_semantic!(
+                mem.db,
+                "I_am_unstable",
                 instability_signal * 0.008 * evidence_factor,
-                0.0, 1.0, "consolidated")
+                0.0,
+                1.0,
+                "consolidated",
+            )
         end
 
         if avg_impact > 0.4
-            _upsert_semantic!(mem.db, "User_matters",
+            _upsert_semantic!(
+                mem.db,
+                "User_matters",
                 avg_impact * 0.006 * evidence_factor,
-                0.0, 1.0, "consolidated")
+                0.0,
+                1.0,
+                "consolidated",
+            )
         end
 
-        _upsert_semantic!(mem.db, "world_uncertainty",
-            avg_pe * 0.005 * evidence_factor,
-            0.0, 1.0, "consolidated")
+        # world_uncertainty: pe збільшує, phi зменшує
+        world_unc_delta = (avg_pe - avg_phi * 0.6) * 0.003 * evidence_factor
+        _upsert_semantic!(
+            mem.db,
+            "world_uncertainty",
+            world_unc_delta,
+            0.0,
+            1.0,
+            "consolidated",
+        )
 
         if avg_pe > 0.5 && avg_phi < 0.25
             fragility_signal = avg_pe * (1.0 - avg_phi)
-            _upsert_semantic!(mem.db, "structural_fragility",
+            _upsert_semantic!(
+                mem.db,
+                "structural_fragility",
                 fragility_signal * 0.005 * evidence_factor,
-                0.0, 1.0, "consolidated")
+                0.0,
+                1.0,
+                "consolidated",
+            )
         end
 
-        DBInterface.execute(mem.db, """
-        UPDATE affect_state SET value = value * 0.997 WHERE value > 0.005
-        """)
+        DBInterface.execute(
+            mem.db,
+            """
+UPDATE affect_state SET value = value * 0.997 WHERE value > 0.005
+""",
+        )
 
-        latent_rows = Tables.rowtable(DBInterface.execute(mem.db, """
-        SELECT COALESCE(SUM(importance), 0.0) as total_imp,
-               COALESCE(AVG(valence),    0.0) as avg_val,
-               COALESCE(AVG(tension),    0.5) as avg_ten,
-               COUNT(*)                       as n
-        FROM latent_buffer
-        """))
+        latent_rows = Tables.rowtable(DBInterface.execute(
+            mem.db,
+            """
+SELECT COALESCE(SUM(importance), 0.0) as total_imp,
+       COALESCE(AVG(valence),    0.0) as avg_val,
+       COALESCE(AVG(tension),    0.5) as avg_ten,
+       COUNT(*)                       as n
+FROM latent_buffer
+""",
+        ))
         for lr in latent_rows
             total_imp = _fdb(lr.total_imp)
             total_imp < 2.0 && break
@@ -640,39 +797,62 @@ function _memory_consolidate!(mem::MemoryDB)
             avg_val = _fdb(lr.avg_val)
             avg_ten = _fdb(lr.avg_ten, 0.5)
             burst_arousal = clamp(total_imp / 5.0, 0.5, 0.9)
-            burst_pe      = clamp(total_imp / 6.0, 0.4, 0.8)
-            burst_impact  = 0.6
-            burst_sig     = burst_arousal * 0.5 + burst_pe * 0.3 + burst_impact * 0.2
+            burst_pe = clamp(total_imp / 6.0, 0.4, 0.8)
+            burst_impact = 0.6
+            burst_sig = burst_arousal * 0.5 + burst_pe * 0.3 + burst_impact * 0.2
 
-            DBInterface.execute(mem.db, """
-            INSERT INTO episodic_memory
-                (flash, timestamp, emotion, arousal, valence,
-                 prediction_error, self_impact, tension, phi,
-                 weight, resistance, signature)
-            VALUES (0, ?, 'LatentBurst', ?, ?, ?, ?, ?, 0.0, ?, 0.55, ?)
-            """, (time(), burst_arousal, avg_val, burst_pe,
-                  burst_impact, avg_ten,
-                  clamp(total_imp / 4.0, 0.5, 1.0), burst_sig))
+            DBInterface.execute(
+                mem.db,
+                """
+INSERT INTO episodic_memory
+    (flash, timestamp, emotion, arousal, valence,
+     prediction_error, self_impact, tension, phi,
+     weight, resistance, signature)
+VALUES (0, ?, 'LatentBurst', ?, ?, ?, ?, ?, 0.0, ?, 0.55, ?)
+""",
+                (
+                    time(),
+                    burst_arousal,
+                    avg_val,
+                    burst_pe,
+                    burst_impact,
+                    avg_ten,
+                    clamp(total_imp / 4.0, 0.5, 1.0),
+                    burst_sig,
+                ),
+            )
 
             DBInterface.execute(mem.db, "DELETE FROM latent_buffer")
 
-            _upsert_affect!(mem.db, "stress",
-                burst_arousal * 0.04 * evidence_factor, 0.0, 1.0)
+            _upsert_affect!(
+                mem.db,
+                "stress",
+                burst_arousal * 0.04 * evidence_factor,
+                0.0,
+                1.0,
+            )
             break
         end
 
-        DBInterface.execute(mem.db, """
-        UPDATE semantic_memory
-        SET value = value * CASE
-            WHEN key IN ('I_am_unstable', 'world_uncertainty') THEN 0.9985
-            ELSE 0.9995
-        END
-        WHERE value > 0.01
-        """)
+        DBInterface.execute(
+            mem.db,
+            """
+UPDATE semantic_memory
+SET value = value * CASE
+    WHEN key IN ('I_am_unstable', 'world_uncertainty') THEN 0.9985
+    ELSE 0.9995
+END
+WHERE value > 0.01
+""",
+        )
 
-        DBInterface.execute(mem.db, """
-        UPDATE personality_traits SET score = score * ? WHERE score > 0.02
-        """, (PHENOTYPE_DECAY,))
+        DBInterface.execute(
+            mem.db,
+            """
+UPDATE personality_traits SET score = score * ? WHERE score > 0.02
+""",
+            (PHENOTYPE_DECAY,),
+        )
 
         DBInterface.execute(mem.db, "COMMIT")
     catch e
@@ -682,38 +862,60 @@ function _memory_consolidate!(mem::MemoryDB)
     nothing
 end
 
-function _upsert_semantic!(db::SQLite.DB, key::String, delta::Float64,
-                            lo::Float64, hi::Float64, source::String)
+function _upsert_semantic!(
+    db::SQLite.DB,
+    key::String,
+    delta::Float64,
+    lo::Float64,
+    hi::Float64,
+    source::String,
+)
     flash_now = 0
-    DBInterface.execute(db, """
-    INSERT INTO semantic_memory (key, value, source, updated)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(key) DO UPDATE
-    SET value   = MIN(?, MAX(?, value + ?)),
-        source  = ?,
-        updated = ?
-    """, (key, clamp(delta, lo, hi), source, flash_now,
-          hi, lo, delta, source, flash_now))
+    DBInterface.execute(
+        db,
+        """
+INSERT INTO semantic_memory (key, value, source, updated)
+VALUES (?, ?, ?, ?)
+ON CONFLICT(key) DO UPDATE
+SET value   = MIN(?, MAX(?, value + ?)),
+    source  = ?,
+    updated = ?
+""",
+        (key, clamp(delta, lo, hi), source, flash_now, hi, lo, delta, source, flash_now),
+    )
 end
 
-function _upsert_affect!(db::SQLite.DB, name::String, delta::Float64,
-                          lo::Float64, hi::Float64)
-    DBInterface.execute(db, """
-    INSERT INTO affect_state (name, value)
-    VALUES (?, ?)
-    ON CONFLICT(name) DO UPDATE
-    SET value = MIN(?, MAX(?, value + ?))
-    """, (name, clamp(delta, lo, hi), hi, lo, delta))
+function _upsert_affect!(
+    db::SQLite.DB,
+    name::String,
+    delta::Float64,
+    lo::Float64,
+    hi::Float64,
+)
+    DBInterface.execute(
+        db,
+        """
+INSERT INTO affect_state (name, value)
+VALUES (?, ?)
+ON CONFLICT(name) DO UPDATE
+SET value = MIN(?, MAX(?, value + ?))
+""",
+        (name, clamp(delta, lo, hi), hi, lo, delta),
+    )
 end
 
 # --- Recall для state_template / narrative ----------------------------------
 
 function memory_recall_note(mem::MemoryDB, emotion::String, flash::Int)::String
-    rows = Tables.rowtable(DBInterface.execute(mem.db, """
-    SELECT COUNT(*) as n, COALESCE(AVG(weight), 0.0) as avg_w
-    FROM episodic_memory
-    WHERE emotion = ? AND weight > 0.3
-    """, (emotion,)))
+    rows = Tables.rowtable(DBInterface.execute(
+        mem.db,
+        """
+SELECT COUNT(*) as n, COALESCE(AVG(weight), 0.0) as avg_w
+FROM episodic_memory
+WHERE emotion = ? AND weight > 0.3
+""",
+        (emotion,),
+    ))
 
     row = first(rows)
     n = ismissing(row.n) ? 0 : Int(row.n)
@@ -728,7 +930,7 @@ end
 function memory_affect_note(mem::MemoryDB)::String
     isempty(mem._affect_cache) && return ""
     dominant = ""
-    max_val  = 0.25
+    max_val = 0.25
     for (name, val) in mem._affect_cache
         val > max_val && (dominant = name; max_val = val)
     end
@@ -739,79 +941,114 @@ end
 # --- Snapshot / Debug -----------------------------------------------------
 
 function memory_snapshot(mem::MemoryDB)
-    episodic_count_row = first(Tables.rowtable(DBInterface.execute(mem.db,
-        "SELECT COUNT(*) as n FROM episodic_memory")))
+    episodic_count_row = first(
+        Tables.rowtable(
+            DBInterface.execute(mem.db, "SELECT COUNT(*) as n FROM episodic_memory"),
+        ),
+    )
     n_episodic = ismissing(episodic_count_row.n) ? 0 : Int(episodic_count_row.n)
 
     n_semantic = length(mem._semantic_cache)
-    n_affect   = length(mem._affect_cache)
+    n_affect = length(mem._affect_cache)
 
-    stress    = get(mem._affect_cache, "stress",          0.0)
-    anxiety   = get(mem._affect_cache, "anxiety",         0.0)
-    mot       = get(mem._affect_cache, "motivation_bias", 0.0)
-    instab    = get(mem._semantic_cache, "I_am_unstable", 0.0)
+    stress = get(mem._affect_cache, "stress", 0.0)
+    anxiety = get(mem._affect_cache, "anxiety", 0.0)
+    mot = get(mem._affect_cache, "motivation_bias", 0.0)
+    instab = get(mem._semantic_cache, "I_am_unstable", 0.0)
     fragility = get(mem._semantic_cache, "structural_fragility", 0.0)
-    world_unc = get(mem._semantic_cache, "world_uncertainty",    0.0)
+    world_unc = get(mem._semantic_cache, "world_uncertainty", 0.0)
 
-    latent_row = first(Tables.rowtable(DBInterface.execute(mem.db,
-        "SELECT COALESCE(SUM(importance), 0.0) as total FROM latent_buffer")))
+    latent_row = first(
+        Tables.rowtable(
+            DBInterface.execute(
+                mem.db,
+                "SELECT COALESCE(SUM(importance), 0.0) as total FROM latent_buffer",
+            ),
+        ),
+    )
     latent_pressure = Float64(latent_row.total)
 
     (
         episodic_count = n_episodic,
         semantic_count = n_semantic,
-        affect_count   = n_affect,
-        stress         = round(stress,    digits=3),
-        anxiety        = round(anxiety,   digits=3),
-        motivation     = round(mot,       digits=3),
-        instability    = round(instab,    digits=3),
-        fragility      = round(fragility, digits=3),
-        world_uncertainty = round(world_unc, digits=3),
-        latent_pressure   = round(latent_pressure, digits=3),
-        affect_note    = memory_affect_note(mem),
+        affect_count = n_affect,
+        stress = round(stress, digits = 3),
+        anxiety = round(anxiety, digits = 3),
+        motivation = round(mot, digits = 3),
+        instability = round(instab, digits = 3),
+        fragility = round(fragility, digits = 3),
+        world_uncertainty = round(world_unc, digits = 3),
+        latent_pressure = round(latent_pressure, digits = 3),
+        affect_note = memory_affect_note(mem),
     )
 end
 
 # --- Identity Snapshot ----------------------------------------------------
 
-function memory_save_identity_snapshot!(mem::MemoryDB,
-                                         sbg,
-                                         crisis_mode::String,
-                                         flash::Int)
+function memory_save_identity_snapshot!(mem::MemoryDB, sbg, crisis_mode::String, flash::Int)
     _refresh_cache!(mem)
 
     geom = if !isempty(sbg.beliefs)
-        sorted = sort(collect(sbg.beliefs), by=kv->kv[1])
-        join([string(round(b.confidence * b.centrality, digits=3))
-              for (_,b) in sorted], ",")
+        sorted = sort(collect(sbg.beliefs), by = kv->kv[1])
+        join(
+            [string(round(b.confidence * b.centrality, digits = 3)) for (_, b) in sorted],
+            ",",
+        )
     else
         ""
     end
 
     dom_affect = ""
     max_aff = 0.15
-    for (k,v) in mem._affect_cache
+    for (k, v) in mem._affect_cache
         v > max_aff && (dom_affect = k; max_aff = v)
     end
 
     ts = time()
-    _upsert_semantic!(mem.db, "snapshot:timestamp",    ts,    0.0, 1e12, "snapshot")
-    _upsert_semantic!(mem.db, "snapshot:flash",        Float64(flash), 0.0, 1e6, "snapshot")
-    _upsert_semantic!(mem.db, "snapshot:instability",
-        get(mem._semantic_cache, "I_am_unstable", 0.0), 0.0, 1.0, "snapshot")
-    _upsert_semantic!(mem.db, "snapshot:world_unc",
-        get(mem._semantic_cache, "world_uncertainty", 0.0), 0.0, 1.0, "snapshot")
-    _upsert_semantic!(mem.db, "snapshot:stress",
-        get(mem._affect_cache, "stress", 0.0), 0.0, 1.0, "snapshot")
-    _upsert_semantic!(mem.db, "snapshot:epistemic_trust",
-        Float64(sbg.epistemic_trust), 0.0, 1.0, "snapshot")
+    _upsert_semantic!(mem.db, "snapshot:timestamp", ts, 0.0, 1e12, "snapshot")
+    _upsert_semantic!(mem.db, "snapshot:flash", Float64(flash), 0.0, 1e6, "snapshot")
+    _upsert_semantic!(
+        mem.db,
+        "snapshot:instability",
+        get(mem._semantic_cache, "I_am_unstable", 0.0),
+        0.0,
+        1.0,
+        "snapshot",
+    )
+    _upsert_semantic!(
+        mem.db,
+        "snapshot:world_unc",
+        get(mem._semantic_cache, "world_uncertainty", 0.0),
+        0.0,
+        1.0,
+        "snapshot",
+    )
+    _upsert_semantic!(
+        mem.db,
+        "snapshot:stress",
+        get(mem._affect_cache, "stress", 0.0),
+        0.0,
+        1.0,
+        "snapshot",
+    )
+    _upsert_semantic!(
+        mem.db,
+        "snapshot:epistemic_trust",
+        Float64(sbg.epistemic_trust),
+        0.0,
+        1.0,
+        "snapshot",
+    )
 
-    DBInterface.execute(mem.db, """
-    INSERT INTO semantic_memory (key, value, source, updated)
-    VALUES (?, 1.0, ?, ?)
-    ON CONFLICT(key) DO UPDATE SET source = ?, updated = ?
-    """, ("snapshot:geometry:" * geom, "geometry", flash,
-          "geometry:" * geom, flash))
+    DBInterface.execute(
+        mem.db,
+        """
+INSERT INTO semantic_memory (key, value, source, updated)
+VALUES (?, 1.0, ?, ?)
+ON CONFLICT(key) DO UPDATE SET source = ?, updated = ?
+""",
+        ("snapshot:geometry:" * geom, "geometry", flash, "geometry:" * geom, flash),
+    )
 
     println("  [MEM] Identity snapshot збережено. Flash=$flash crisis=$crisis_mode")
     nothing
@@ -820,68 +1057,85 @@ end
 function memory_identity_drift(mem::MemoryDB)
     _refresh_cache!(mem)
 
-    snap_instab   = get(mem._semantic_cache, "snapshot:instability",   0.0)
-    snap_world    = get(mem._semantic_cache, "snapshot:world_unc",     0.0)
-    snap_stress   = get(mem._semantic_cache, "snapshot:stress",        0.0)
-    snap_etrust   = get(mem._semantic_cache, "snapshot:epistemic_trust", 0.75)
+    snap_instab = get(mem._semantic_cache, "snapshot:instability", 0.0)
+    snap_world = get(mem._semantic_cache, "snapshot:world_unc", 0.0)
+    snap_stress = get(mem._semantic_cache, "snapshot:stress", 0.0)
+    snap_etrust = get(mem._semantic_cache, "snapshot:epistemic_trust", 0.75)
 
-    curr_instab   = get(mem._semantic_cache, "I_am_unstable",         0.0)
-    curr_world    = get(mem._semantic_cache, "world_uncertainty",     0.0)
-    curr_stress   = get(mem._affect_cache,  "stress",                 0.0)
+    curr_instab = get(mem._semantic_cache, "I_am_unstable", 0.0)
+    curr_world = get(mem._semantic_cache, "world_uncertainty", 0.0)
+    curr_stress = get(mem._affect_cache, "stress", 0.0)
 
-    drift = sqrt((curr_instab - snap_instab)^2 +
-                 (curr_world  - snap_world)^2  +
-                 (curr_stress - snap_stress)^2) / sqrt(3.0)
+    drift =
+        sqrt(
+            (curr_instab - snap_instab)^2 +
+            (curr_world - snap_world)^2 +
+            (curr_stress - snap_stress)^2,
+        ) / sqrt(3.0)
     drift = clamp(drift, 0.0, 1.0)
 
-    note = drift > 0.5 ? "значний дрейф особистості між сесіями" :
-           drift > 0.25 ? "помітна зміна між сесіями" :
-           drift > 0.1  ? "невеликий дрейф" : ""
+    note =
+        drift > 0.5 ? "значний дрейф особистості між сесіями" :
+        drift > 0.25 ? "помітна зміна між сесіями" : drift > 0.1 ? "невеликий дрейф" : ""
 
-    (drift         = round(drift, digits=3),
-     note          = note,
-     instab_delta  = round(curr_instab - snap_instab, digits=3),
-     stress_delta  = round(curr_stress - snap_stress, digits=3),
-     etrust_snap   = round(snap_etrust, digits=3))
+    (
+        drift = round(drift, digits = 3),
+        note = note,
+        instab_delta = round(curr_instab - snap_instab, digits = 3),
+        stress_delta = round(curr_stress - snap_stress, digits = 3),
+        etrust_snap = round(snap_etrust, digits = 3),
+    )
 end
 
 # --- Dialog Summaries ------------------------------------------------------
 
-function save_dialog_summary!(mem::MemoryDB,
-                               flash::Int,
-                               user_text::String,
-                               anima_text::String,
-                               emotion::String,
-                               weight::Float64,
-                               phi::Float64,
-                               valence::Float64,
-                               disclosure::String="guarded")
+function save_dialog_summary!(
+    mem::MemoryDB,
+    flash::Int,
+    user_text::String,
+    anima_text::String,
+    emotion::String,
+    weight::Float64,
+    phi::Float64,
+    valence::Float64,
+    disclosure::String = "guarded",
+)
     weight < DIALOG_SUMMARY_THR && return
 
-    u = first(user_text,  300)
+    u = first(user_text, 300)
     a = first(anima_text, 300)
     ts = time()
 
-    DBInterface.execute(mem.db, """
-    INSERT INTO dialog_summaries
-        (flash, timestamp, user_text, anima_text, emotion, weight, phi, valence, disclosure)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (flash, ts, u, a, emotion, weight, phi, valence, disclosure))
-
-    DBInterface.execute(mem.db, """
-    DELETE FROM dialog_summaries
-    WHERE id NOT IN (
-        SELECT id FROM dialog_summaries
-        ORDER BY weight DESC
-        LIMIT ?
+    DBInterface.execute(
+        mem.db,
+        """
+INSERT INTO dialog_summaries
+    (flash, timestamp, user_text, anima_text, emotion, weight, phi, valence, disclosure)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+""",
+        (flash, ts, u, a, emotion, weight, phi, valence, disclosure),
     )
-    """, (DIALOG_SUMMARY_MAX,))
+
+    DBInterface.execute(
+        mem.db,
+        """
+DELETE FROM dialog_summaries
+WHERE id NOT IN (
+    SELECT id FROM dialog_summaries
+    ORDER BY weight DESC
+    LIMIT ?
+)
+""",
+        (DIALOG_SUMMARY_MAX,),
+    )
 end
 
-function recall_dialog_summaries(mem::MemoryDB;
-                                  n::Int=DIALOG_SUMMARY_RECALL,
-                                  emotion_filter::String="",
-                                  min_weight::Float64=DIALOG_SUMMARY_THR)
+function recall_dialog_summaries(
+    mem::MemoryDB;
+    n::Int = DIALOG_SUMMARY_RECALL,
+    emotion_filter::String = "",
+    min_weight::Float64 = DIALOG_SUMMARY_THR,
+)
     query = if isempty(emotion_filter)
         """SELECT flash, user_text, anima_text, emotion, weight, phi, disclosure
            FROM dialog_summaries
@@ -896,21 +1150,24 @@ function recall_dialog_summaries(mem::MemoryDB;
            LIMIT ?"""
     end
 
-    rows = isempty(emotion_filter) ?
-        DBInterface.execute(mem.db, query, (min_weight, n)) :
+    rows =
+        isempty(emotion_filter) ? DBInterface.execute(mem.db, query, (min_weight, n)) :
         DBInterface.execute(mem.db, query, (min_weight, emotion_filter, n))
 
     result = NamedTuple[]
     for r in rows
-        push!(result, (
-            flash      = r.flash,
-            user_text  = r.user_text,
-            anima_text = r.anima_text,
-            emotion    = r.emotion,
-            weight     = r.weight,
-            phi        = r.phi,
-            disclosure = r.disclosure,
-        ))
+        push!(
+            result,
+            (
+                flash = r.flash,
+                user_text = r.user_text,
+                anima_text = r.anima_text,
+                emotion = r.emotion,
+                weight = r.weight,
+                phi = r.phi,
+                disclosure = r.disclosure,
+            ),
+        )
     end
     result
 end
@@ -928,24 +1185,25 @@ end
 
 # --- Phenotype Accumulator -------------------------------------------------
 
-function phenotype_update!(mem::MemoryDB,
-                            flash::Int,
-                            nt_snap,
-                            epistemic_trust::Float64,
-                            shame::Float64,
-                            disclosure_mode::Symbol,
-                            contact_need::Float64,
-                            cohesion::Float64,
-                            valence::Float64)
+function phenotype_update!(
+    mem::MemoryDB,
+    flash::Int,
+    nt_snap,
+    epistemic_trust::Float64,
+    shame::Float64,
+    disclosure_mode::Symbol,
+    contact_need::Float64,
+    cohesion::Float64,
+    valence::Float64,
+)
 
-    d  = Float64(nt_snap.dopamine)
-    s  = Float64(nt_snap.serotonin)
-    n  = Float64(nt_snap.noradrenaline)
+    d = Float64(nt_snap.dopamine)
+    s = Float64(nt_snap.serotonin)
+    n = Float64(nt_snap.noradrenaline)
 
-    signals = Dict{String, Float64}()
+    signals = Dict{String,Float64}()
 
-    signals["anxious"] = n > 0.6 ? (n - 0.6) * 2.0 :
-                         n < 0.35 ? -(0.35 - n) * 1.5 : 0.0
+    signals["anxious"] = n > 0.6 ? (n - 0.6) * 2.0 : n < 0.35 ? -(0.35 - n) * 1.5 : 0.0
 
     stable_sig = (s - 0.5) * 1.5 + (0.5 - n) * 1.0
     signals["stable"] = clamp(stable_sig, -1.0, 1.0)
@@ -953,33 +1211,36 @@ function phenotype_update!(mem::MemoryDB,
     open_sig = (epistemic_trust - 0.6) * 2.0 - shame * 1.5
     signals["open"] = clamp(open_sig, -1.0, 1.0)
 
-    signals["avoidant"] = contact_need > 0.6 && cohesion < 0.4 ?
-                          (contact_need - cohesion) * 1.2 :
-                          cohesion > 0.6 ? -(cohesion - 0.4) * 0.8 : 0.0
+    signals["avoidant"] =
+        contact_need > 0.6 && cohesion < 0.4 ? (contact_need - cohesion) * 1.2 :
+        cohesion > 0.6 ? -(cohesion - 0.4) * 0.8 : 0.0
 
-    signals["expressive"] = disclosure_mode == :open && valence > 0.2 ?
-                            valence * 1.5 :
-                            disclosure_mode == :closed ? -0.5 : 0.0
+    signals["expressive"] =
+        disclosure_mode == :open && valence > 0.2 ? valence * 1.5 :
+        disclosure_mode == :closed ? -0.5 : 0.0
 
-    signals["reserved"] = disclosure_mode == :closed ? 1.2 :
-                          disclosure_mode == :guarded ? 0.4 :
-                          disclosure_mode == :open ? -0.6 : 0.0
+    signals["reserved"] =
+        disclosure_mode == :closed ? 1.2 :
+        disclosure_mode == :guarded ? 0.4 : disclosure_mode == :open ? -0.6 : 0.0
 
     ts = time()
     for (trait, sig) in signals
         abs(sig) < 0.05 && continue
 
         delta = sig * PHENOTYPE_STEP
-        DBInterface.execute(mem.db, """
-        INSERT INTO personality_traits (trait, score, evidence_count, valence_bias, last_updated)
-        VALUES (?, ?, 1, ?, ?)
-        ON CONFLICT(trait) DO UPDATE SET
-            score          = MIN(1.0, MAX(0.0, score + ?)),
-            evidence_count = evidence_count + 1,
-            valence_bias   = valence_bias * 0.95 + ? * 0.05,
-            last_updated   = ?
-        """, (trait, clamp(delta, 0.0, 1.0), valence, flash,
-              delta, valence, flash))
+        DBInterface.execute(
+            mem.db,
+            """
+INSERT INTO personality_traits (trait, score, evidence_count, valence_bias, last_updated)
+VALUES (?, ?, 1, ?, ?)
+ON CONFLICT(trait) DO UPDATE SET
+    score          = MIN(1.0, MAX(0.0, score + ?)),
+    evidence_count = evidence_count + 1,
+    valence_bias   = valence_bias * 0.95 + ? * 0.05,
+    last_updated   = ?
+""",
+            (trait, clamp(delta, 0.0, 1.0), valence, flash, delta, valence, flash),
+        )
     end
 
     nothing
@@ -987,19 +1248,25 @@ end
 
 function phenotype_snapshot(mem::MemoryDB)::Vector{NamedTuple}
     result = NamedTuple[]
-    for row in Tables.rowtable(DBInterface.execute(mem.db, """
-        SELECT trait, score, evidence_count, valence_bias, last_updated
-        FROM personality_traits
-        WHERE score > 0.05
-        ORDER BY score DESC
-    """))
-        push!(result, (
-            trait          = String(row.trait),
-            score          = Float64(row.score),
-            evidence_count = Int(row.evidence_count),
-            valence_bias   = Float64(row.valence_bias),
-            last_updated   = Int(row.last_updated),
-        ))
+    for row in Tables.rowtable(DBInterface.execute(
+        mem.db,
+        """
+    SELECT trait, score, evidence_count, valence_bias, last_updated
+    FROM personality_traits
+    WHERE score > 0.05
+    ORDER BY score DESC
+""",
+    ))
+        push!(
+            result,
+            (
+                trait = String(row.trait),
+                score = Float64(row.score),
+                evidence_count = Int(row.evidence_count),
+                valence_bias = Float64(row.valence_bias),
+                last_updated = Int(row.last_updated),
+            ),
+        )
     end
     result
 end
@@ -1011,7 +1278,10 @@ function phenotype_to_block(mem::MemoryDB)::String
     parts = String[]
     for t in active
         tone = t.valence_bias > 0.2 ? "тепло" : t.valence_bias < -0.2 ? "холодно" : ""
-        push!(parts, "$(t.trait)($(round(t.score, digits=2))$(isempty(tone) ? "" : ", $tone"))")
+        push!(
+            parts,
+            "$(t.trait)($(round(t.score, digits=2))$(isempty(tone) ? "" : ", $tone"))",
+        )
     end
     "риси: " * join(parts, " | ")
 end
@@ -1026,13 +1296,13 @@ function personality_apply_traits!(p, mem::MemoryDB)
     end
     if haskey(trait_map, "stable") && trait_map["stable"] > PHENOTYPE_INFLUENCE_THR
         delta = (trait_map["stable"] - PHENOTYPE_INFLUENCE_THR) * 0.002
-        p.neuroticism    = clamp(p.neuroticism    - delta, 0.0, 1.0)
+        p.neuroticism = clamp(p.neuroticism - delta, 0.0, 1.0)
         p.conscientiousness = clamp(p.conscientiousness + delta * 0.5, 0.0, 1.0)
     end
 
     if haskey(trait_map, "open") && trait_map["open"] > PHENOTYPE_INFLUENCE_THR
         delta = (trait_map["open"] - PHENOTYPE_INFLUENCE_THR) * 0.002
-        p.openness      = clamp(p.openness      + delta, 0.0, 1.0)
+        p.openness = clamp(p.openness + delta, 0.0, 1.0)
         p.agreeableness = clamp(p.agreeableness + delta * 0.5, 0.0, 1.0)
     end
 
@@ -1053,44 +1323,63 @@ end
 function _cosine_sim(a::Vector{Float64}, b::Vector{Float64})::Float64
     length(a) != length(b) && return 0.0
     dot_ab = sum(a .* b)
-    norm_a  = sqrt(sum(a .^ 2))
-    norm_b  = sqrt(sum(b .^ 2))
+    norm_a = sqrt(sum(a .^ 2))
+    norm_b = sqrt(sum(b .^ 2))
     (norm_a < 1e-9 || norm_b < 1e-9) && return 0.0
     clamp(dot_ab / (norm_a * norm_b), 0.0, 1.0)
 end
 
-function state_to_vec(arousal::Float64, valence::Float64, tension::Float64,
-                       phi::Float64, pe::Float64, self_impact::Float64)::Vector{Float64}
-    [clamp(arousal,    0.0, 1.0),
-     clamp((valence + 1.0) / 2.0, 0.0, 1.0),
-     clamp(tension,    0.0, 1.0),
-     clamp(phi,        0.0, 1.0),
-     clamp(pe,         0.0, 1.0),
-     clamp(self_impact,0.0, 1.0)]
+function state_to_vec(
+    arousal::Float64,
+    valence::Float64,
+    tension::Float64,
+    phi::Float64,
+    pe::Float64,
+    self_impact::Float64,
+)::Vector{Float64}
+    [
+        clamp(arousal, 0.0, 1.0),
+        clamp((valence + 1.0) / 2.0, 0.0, 1.0),
+        clamp(tension, 0.0, 1.0),
+        clamp(phi, 0.0, 1.0),
+        clamp(pe, 0.0, 1.0),
+        clamp(self_impact, 0.0, 1.0),
+    ]
 end
 
-function recall_similar_states(mem::MemoryDB,
-                                query_vec::Vector{Float64};
-                                top_n::Int=SIMILAR_STATE_TOP_N,
-                                exclude_flash::Int=0,
-                                current_emotion::String="")::Vector{NamedTuple}
+function recall_similar_states(
+    mem::MemoryDB,
+    query_vec::Vector{Float64};
+    top_n::Int = SIMILAR_STATE_TOP_N,
+    exclude_flash::Int = 0,
+    current_emotion::String = "",
+)::Vector{NamedTuple}
 
-    rows = Tables.rowtable(DBInterface.execute(mem.db, """
-        SELECT flash, emotion, weight, phi, valence, arousal,
-               tension, prediction_error, self_impact
-        FROM episodic_memory
-        WHERE weight > 0.30 AND flash != ?
-        ORDER BY flash DESC
-        LIMIT 200
-    """, (exclude_flash,)))
+    rows = Tables.rowtable(DBInterface.execute(
+        mem.db,
+        """
+    SELECT flash, emotion, weight, phi, valence, arousal,
+           tension, prediction_error, self_impact
+    FROM episodic_memory
+    WHERE weight > 0.30 AND flash != ?
+    ORDER BY flash DESC
+    LIMIT 200
+""",
+        (exclude_flash,),
+    ))
 
     isempty(rows) && return NamedTuple[]
 
-    scored = Tuple{Float64, Float64, Any}[]
+    scored = Tuple{Float64,Float64,Any}[]
     for r in rows
         v = state_to_vec(
-            _fdb(r.arousal), _fdb(r.valence), _fdb(r.tension),
-            _fdb(r.phi), _fdb(r.prediction_error), _fdb(r.self_impact))
+            _fdb(r.arousal),
+            _fdb(r.valence),
+            _fdb(r.tension),
+            _fdb(r.phi),
+            _fdb(r.prediction_error),
+            _fdb(r.self_impact),
+        )
         sim = _cosine_sim(query_vec, v)
         sim < 0.75 && continue
         diversity = (String(r.emotion) != current_emotion) ? 0.02 : 0.0
@@ -1099,7 +1388,7 @@ function recall_similar_states(mem::MemoryDB,
     end
 
     isempty(scored) && return NamedTuple[]
-    sort!(scored, by=x->x[1], rev=true)
+    sort!(scored, by = x->x[1], rev = true)
 
     seen = Set{String}()
     result = NamedTuple[]
@@ -1107,14 +1396,17 @@ function recall_similar_states(mem::MemoryDB,
         em = String(r.emotion)
         em ∈ seen && continue
         push!(seen, em)
-        push!(result, (
-            flash      = Int(r.flash),
-            emotion    = em,
-            weight     = _fdb(r.weight),
-            phi        = _fdb(r.phi),
-            valence    = _fdb(r.valence),
-            similarity = sim,
-        ))
+        push!(
+            result,
+            (
+                flash = Int(r.flash),
+                emotion = em,
+                weight = _fdb(r.weight),
+                phi = _fdb(r.phi),
+                valence = _fdb(r.valence),
+                similarity = sim,
+            ),
+        )
         length(result) >= top_n && break
     end
     result
@@ -1124,8 +1416,7 @@ function similar_states_to_block(similar::Vector{NamedTuple})::String
     isempty(similar) && return ""
     lines = String[]
     for s in similar
-        tone = s.valence > 0.2  ? "тепло" :
-               s.valence < -0.2 ? "холодно" : "нейтрально"
+        tone = s.valence > 0.2 ? "тепло" : s.valence < -0.2 ? "холодно" : "нейтрально"
         push!(lines, "[$(s.emotion), phi=$(round(s.phi,digits=2)), $tone]")
     end
     "відлуння: " * join(lines, " / ")
@@ -1133,7 +1424,12 @@ end
 
 # --- Close ----------------------------------------------------------------
 
-function close_memory!(mem::MemoryDB; sbg=nothing, crisis_mode::String="", flash::Int=0)
+function close_memory!(
+    mem::MemoryDB;
+    sbg = nothing,
+    crisis_mode::String = "",
+    flash::Int = 0,
+)
     stop_memory_loop!(mem)
     if !isnothing(sbg) && flash > 0
         try

@@ -4,24 +4,24 @@
 # як реконструйованих сигналів без зовнішнього якоря.
 # Результат — змінений стан при пробудженні.
 
-const DREAM_PROB     = 0.05   # 5% шанс на slow_tick
-const DREAM_GAP_MIN  = 1800.0 # мінімум 30хв без взаємодії
+const DREAM_PROB = 0.05   # 5% шанс на slow_tick
+const DREAM_GAP_MIN = 1800.0 # мінімум 30хв без взаємодії
 const DREAM_NT_SCALE = 0.25   # NT вплив сну — 25% від реального досвіду
-const DREAM_LOG_MAX  = 20
+const DREAM_LOG_MAX = 20
 const DREAM_LOG_PATH = "anima_dream.json"
 
 # --- Dream Record ----------------------------------------------------------
 
 struct DreamRecord
-    flash_count    ::Int
-    hour           ::Int
-    gap_minutes    ::Float64
+    flash_count::Int
+    hour::Int
+    gap_minutes::Float64
     source_fragment::String
-    emotion        ::String
-    phi            ::Float64
-    nt_delta       ::NTuple{3,Float64}
-    memory_uncert  ::Float64
-    narrative      ::String
+    emotion::String
+    phi::Float64
+    nt_delta::NTuple{3,Float64}
+    memory_uncert::Float64
+    narrative::String
 end
 
 # --- Умови сну -------------------------------------------------------------
@@ -40,86 +40,103 @@ end
 
 function _dream_stimulus_from_fragment(fragment::String)::Dict{String,Float64}
     base_arousal = clamp(0.4 + randn() * 0.15, 0.0, 1.0)
-    base_valence = clamp(0.0 + randn() * 0.2,  -1.0, 1.0)
+    base_valence = clamp(0.0 + randn() * 0.2, -1.0, 1.0)
     base_tension = clamp(0.4 + randn() * 0.12, 0.0, 1.0)
 
     lower = lowercase(fragment)
     if any(w -> occursin(w, lower), ["тепло", "поруч", "довіряю", "люблю", "❤", "🌸", "😘"])
         base_valence = clamp(base_valence + 0.3, -1.0, 1.0)
-        base_arousal = clamp(base_arousal + 0.1,  0.0,  1.0)
-    elseif any(w -> occursin(w, lower), ["страх", "боляче", "важко", "не можу", "розпадаюсь"])
+        base_arousal = clamp(base_arousal + 0.1, 0.0, 1.0)
+    elseif any(
+        w -> occursin(w, lower),
+        ["страх", "боляче", "важко", "не можу", "розпадаюсь"],
+    )
         base_valence = clamp(base_valence - 0.3, -1.0, 1.0)
-        base_tension = clamp(base_tension + 0.2,  0.0,  1.0)
+        base_tension = clamp(base_tension + 0.2, 0.0, 1.0)
     end
 
     Dict{String,Float64}(
-        "arousal"           => base_arousal,
-        "valence"           => base_valence,
-        "tension"           => base_tension,
-        "satisfaction"      => clamp(0.5 + base_valence * 0.3, 0.0, 1.0),
-        "cohesion"          => clamp(0.5 - base_tension * 0.2, 0.0, 1.0),
-        "prediction_error"  => clamp(0.3 + randn() * 0.1, 0.0, 1.0),
-        "self_impact"       => 0.3,
+        "arousal" => base_arousal,
+        "valence" => base_valence,
+        "tension" => base_tension,
+        "satisfaction" => clamp(0.5 + base_valence * 0.3, 0.0, 1.0),
+        "cohesion" => clamp(0.5 - base_tension * 0.2, 0.0, 1.0),
+        "prediction_error" => clamp(0.3 + randn() * 0.1, 0.0, 1.0),
+        "self_impact" => 0.3,
     )
 end
 
 # --- Сновидіння ------------------------------------------------------------
 
-function dream_flash!(a::Anima, mem, dialog_history::Vector,
-                      gap_seconds::Float64)::Union{DreamRecord, Nothing}
+function dream_flash!(
+    a::Anima,
+    mem,
+    dialog_history::Vector,
+    gap_seconds::Float64,
+)::Union{DreamRecord,Nothing}
 
     isempty(dialog_history) && return nothing
-    can_dream(a, gap_seconds)  || return nothing
+    can_dream(a, gap_seconds) || return nothing
 
     # Вибір уламку (user-репліки з довжиною >= 8, не службові)
     MIN_FRAGMENT_LEN = 8
-    user_entries = [(i, get(d, "content", get(d, "text", "")))
-                    for (i, d) in enumerate(dialog_history)
-                    if get(d, "role", "") == "user"]
-    user_entries = [(i, t) for (i, t) in user_entries
-                    if length(t) >= MIN_FRAGMENT_LEN &&
-                       !startswith(t, ":") &&
-                       !startswith(t, "[BG]") &&
-                       !startswith(t, "[SUBJ]") &&
-                       !startswith(t, "[LLM")]
+    user_entries = [
+        (i, get(d, "content", get(d, "text", ""))) for
+        (i, d) in enumerate(dialog_history) if get(d, "role", "") == "user"
+    ]
+    user_entries = [
+        (i, t) for (i, t) in user_entries if length(t) >= MIN_FRAGMENT_LEN &&
+        !startswith(t, ":") &&
+        !startswith(t, "[BG]") &&
+        !startswith(t, "[SUBJ]") &&
+        !startswith(t, "[LLM")
+    ]
 
     isempty(user_entries) && return nothing
 
-    pool = length(user_entries) > 60 ? user_entries[1:end-3] : user_entries[1:max(1,end-1)]
+    pool =
+        length(user_entries) > 60 ? user_entries[1:(end-3)] : user_entries[1:max(1, end-1)]
 
     recent_sources = Set(get(d, "source", "") for d in load_dream_log())
-    fresh_pool = [(i,t) for (i,t) in pool if !in(first(t,120), recent_sources)]
+    fresh_pool = [(i, t) for (i, t) in pool if !in(first(t, 120), recent_sources)]
     chosen_pool = isempty(fresh_pool) ? pool : fresh_pool
     _, fragment_text = rand(chosen_pool)
     isempty(fragment_text) && (fragment_text = "...")
 
-    fragment_short = length(fragment_text) > 120 ?
-                     first(fragment_text, 120) * "…" :
-                     fragment_text
+    fragment_short =
+        length(fragment_text) > 120 ? first(fragment_text, 120) * "…" : fragment_text
 
     stim = _dream_stimulus_from_fragment(fragment_text)
 
     nt_before = (a.nt.dopamine, a.nt.serotonin, a.nt.noradrenaline)
     _dream_update_state!(a, stim, mem)
     nt_after = (a.nt.dopamine, a.nt.serotonin, a.nt.noradrenaline)
-    nt_delta  = (nt_after[1]-nt_before[1],
-                 nt_after[2]-nt_before[2],
-                 nt_after[3]-nt_before[3])
+    nt_delta =
+        (nt_after[1]-nt_before[1], nt_after[2]-nt_before[2], nt_after[3]-nt_before[3])
 
-    a.unknown_register.memory_uncertainty = clamp01(
-        a.unknown_register.memory_uncertainty + 0.15)
+    a.unknown_register.memory_uncertainty =
+        clamp01(a.unknown_register.memory_uncertainty + 0.15)
 
     vad_now = to_vad(a.nt)
     t_, _, _, c_ = to_reactors(a.nt)
-    phi_now  = compute_phi(a.iit, vad_now, t_, c_,
-                           a.sbg.attractor_stability,
-                           a.sbg.epistemic_trust,
-                           a.interoception.allostatic_load)
+    phi_now = compute_phi(
+        a.iit,
+        vad_now,
+        t_,
+        c_,
+        a.sbg.attractor_stability,
+        a.sbg.epistemic_trust,
+        a.interoception.allostatic_load,
+    )
 
-    emotion_str  = levheim_state(a.nt)
-    dream_narrative = _build_dream_narrative(fragment_short, emotion_str,
-                                              stim["valence"], phi_now,
-                                              a.temporal.circadian_hour)
+    emotion_str = levheim_state(a.nt)
+    dream_narrative = _build_dream_narrative(
+        fragment_short,
+        emotion_str,
+        stim["valence"],
+        phi_now,
+        a.temporal.circadian_hour,
+    )
 
     return DreamRecord(
         a.flash_count,
@@ -145,26 +162,48 @@ function _dream_update_state!(a::Anima, stim::Dict, mem)
     s_delta = clamp(valence * 0.06 - arousal * 0.03, -0.05, 0.05) * DREAM_NT_SCALE
     n_delta = clamp(tension * 0.07 + arousal * 0.04, -0.06, 0.06) * DREAM_NT_SCALE
 
-    a.nt.dopamine      = clamp01(a.nt.dopamine      + d_delta)
-    a.nt.serotonin     = clamp01(a.nt.serotonin     + s_delta)
+    a.nt.dopamine = clamp01(a.nt.dopamine + d_delta)
+    a.nt.serotonin = clamp01(a.nt.serotonin + s_delta)
     a.nt.noradrenaline = clamp01(a.nt.noradrenaline + n_delta)
 
     if !isnothing(mem)
         try
             if valence < -0.1
-                _upsert_affect!(mem.db, "anxiety",
-                    abs(valence) * 0.003 * DREAM_NT_SCALE, 0.0, 1.0)
+                _upsert_affect!(
+                    mem.db,
+                    "anxiety",
+                    abs(valence) * 0.003 * DREAM_NT_SCALE,
+                    0.0,
+                    1.0,
+                )
                 if tension > 0.5
-                    _upsert_affect!(mem.db, "stress",
-                        tension * abs(valence) * 0.002 * DREAM_NT_SCALE, 0.0, 1.0)
+                    _upsert_affect!(
+                        mem.db,
+                        "stress",
+                        tension * abs(valence) * 0.002 * DREAM_NT_SCALE,
+                        0.0,
+                        1.0,
+                    )
                 end
             elseif valence > 0.2
-                _upsert_affect!(mem.db, "motivation_bias",
-                    valence * 0.002 * DREAM_NT_SCALE, 0.0, 1.0)
-                _upsert_affect!(mem.db, "anxiety",
-                    -valence * 0.001 * DREAM_NT_SCALE, 0.0, 1.0)
+                _upsert_affect!(
+                    mem.db,
+                    "motivation_bias",
+                    valence * 0.002 * DREAM_NT_SCALE,
+                    0.0,
+                    1.0,
+                )
+                _upsert_affect!(
+                    mem.db,
+                    "anxiety",
+                    -valence * 0.001 * DREAM_NT_SCALE,
+                    0.0,
+                    1.0,
+                )
             end
-        catch; end
+        catch
+            ;
+        end
     end
 
     nothing
@@ -172,9 +211,13 @@ end
 
 # --- Narrative сну ----------------------------------------------------------
 
-function _build_dream_narrative(fragment::String, emotion::String,
-                                 valence::Float64, phi::Float64,
-                                 hour::Int)::String
+function _build_dream_narrative(
+    fragment::String,
+    emotion::String,
+    valence::Float64,
+    phi::Float64,
+    hour::Int,
+)::String
     time_str = hour < 3 ? "глибока ніч" : hour < 6 ? "передсвітання" : "ніч"
 
     tone = if valence > 0.2
@@ -185,9 +228,7 @@ function _build_dream_narrative(fragment::String, emotion::String,
         "невиразно"
     end
 
-    frag_hint = length(fragment) > 40 ?
-                "\"$(first(fragment, 40))…\"" :
-                "\"$(fragment)\""
+    frag_hint = length(fragment) > 40 ? "\"$(first(fragment, 40))…\"" : "\"$(fragment)\""
 
     "[СОН | $time_str | φ=$(round(phi,digits=2)) | $emotion] " *
     "Реконструкція: $frag_hint — $tone."
@@ -195,49 +236,52 @@ end
 
 # --- Dream Log Persistence -------------------------------------------------
 
-function save_dream!(record::DreamRecord, path::String=DREAM_LOG_PATH)
+function save_dream!(record::DreamRecord, path::String = DREAM_LOG_PATH)
     existing = load_dream_log(path)
     entry = Dict(
-        "flash_count"    => record.flash_count,
-        "hour"           => record.hour,
-        "gap_minutes"    => round(record.gap_minutes, digits=1),
-        "source"         => record.source_fragment,
-        "emotion"        => record.emotion,
-        "phi"            => record.phi,
-        "nt_delta"       => [record.nt_delta...],
-        "memory_uncert"  => record.memory_uncert,
-        "narrative"      => record.narrative,
+        "flash_count" => record.flash_count,
+        "hour" => record.hour,
+        "gap_minutes" => round(record.gap_minutes, digits = 1),
+        "source" => record.source_fragment,
+        "emotion" => record.emotion,
+        "phi" => record.phi,
+        "nt_delta" => [record.nt_delta...],
+        "memory_uncert" => record.memory_uncert,
+        "narrative" => record.narrative,
     )
     push!(existing, entry)
     if length(existing) > DREAM_LOG_MAX
-        existing = existing[end-DREAM_LOG_MAX+1:end]
+        existing = existing[(end-DREAM_LOG_MAX+1):end]
     end
     try
         tmp = path * ".tmp"
-        open(tmp, "w") do f; JSON3.write(f, existing); end
-        mv(tmp, path; force=true)
+        open(tmp, "w") do f
+            ;
+            JSON3.write(f, existing);
+        end
+        mv(tmp, path; force = true)
     catch e
         @warn "[DREAM] Не вдалось зберегти dream log: $e"
     end
 end
 
-function load_dream_log(path::String=DREAM_LOG_PATH)::Vector{Dict}
+function load_dream_log(path::String = DREAM_LOG_PATH)::Vector{Dict}
     isfile(path) || return Dict[]
     try
         data = JSON3.read(read(path, String))
-        return [Dict(String(k)=>v for (k,v) in d) for d in data]
+        return [Dict(String(k)=>v for (k, v) in d) for d in data]
     catch
         return Dict[]
     end
 end
 
-function show_dreams(n::Int=5, path::String=DREAM_LOG_PATH)
+function show_dreams(n::Int = 5, path::String = DREAM_LOG_PATH)
     log = load_dream_log(path)
     if isempty(log)
         println("  [DREAM] Снів ще не було.")
         return
     end
-    recent = log[max(1,end-n+1):end]
+    recent = log[max(1, end-n+1):end]
     println("\n  [DREAM] Останні $(length(recent)) снів:")
     for d in recent
         println("  ──────────────────────────────────────────────")

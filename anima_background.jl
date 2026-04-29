@@ -26,15 +26,15 @@
 
 # --- Константи ------------------------------------------------------------
 
-const SLOW_TICK_INTERVAL   = 60.0   # секунд між повільними тіками
-const BELIEF_DECAY_RATE    = 0.0003 # за тік: confidence → baseline (rigidity-зважено)
-const ALLOSTATIC_RECOVERY  = 0.004  # allostatic_load знижується за тік
-const IDLE_THOUGHT_PROB    = 0.10   # 10% шанс idle thought за повільний тік
-const DRIFT_NT_SIGMA       = 0.008  # σ спонтанного дрейфу NT за тік серця
+const SLOW_TICK_INTERVAL = 60.0   # секунд між повільними тіками
+const BELIEF_DECAY_RATE = 0.0003 # за тік: confidence → baseline (rigidity-зважено)
+const ALLOSTATIC_RECOVERY = 0.004  # allostatic_load знижується за тік
+const IDLE_THOUGHT_PROB = 0.10   # 10% шанс idle thought за повільний тік
+const DRIFT_NT_SIGMA = 0.008  # σ спонтанного дрейфу NT за тік серця
 const DRIFT_COHERENCE_LOSS = 0.003  # coherence трохи знижується від drift
 
-const ARRHYTHMIA_THR       = 0.35   # нижче → аритмія
-const ARRHYTHMIA_JITTER    = 0.25   # максимальна варіація (±25%)
+const ARRHYTHMIA_THR = 0.35   # нижче → аритмія
+const ARRHYTHMIA_JITTER = 0.25   # максимальна варіація (±25%)
 
 # --- Background Handle -----------------------------------------------------
 
@@ -45,8 +45,8 @@ mutable struct BackgroundHandle
     last_slow_tick::Float64
     tick_count::Int
     slow_tick_count::Int
-    mem::Union{Any, Nothing}   # MemoryDB або nothing
-    subj::Union{Any, Nothing}  # SubjectivityEngine або nothing
+    mem::Union{Any,Nothing}   # MemoryDB або nothing
+    subj::Union{Any,Nothing}  # SubjectivityEngine або nothing
     dialog_history::Ref{Vector}  # для dream generation
 end
 
@@ -60,11 +60,11 @@ end
 """
 function heartbeat_dt(a::Anima)::Float64
     base = clamp(a.heartbeat.period_ms / 1000.0, 0.4, 1.5)
-    cs   = a.crisis.coherence
+    cs = a.crisis.coherence
     if cs < ARRHYTHMIA_THR
         severity = (ARRHYTHMIA_THR - cs) / ARRHYTHMIA_THR
-        jitter   = severity * ARRHYTHMIA_JITTER * (2*rand() - 1)
-        base     = clamp(base * (1.0 + jitter), 0.3, 2.0)
+        jitter = severity * ARRHYTHMIA_JITTER * (2*rand() - 1)
+        base = clamp(base * (1.0 + jitter), 0.3, 2.0)
     end
     base
 end
@@ -78,10 +78,12 @@ end
 сесіями ідеально стабільна — мертва. σ = 0.008 → ледь помітний рух.
 """
 function spontaneous_drift!(a::Anima)
-    a.nt.dopamine      = clamp(a.nt.dopamine      + randn() * DRIFT_NT_SIGMA,       0.05, 0.95)
-    a.nt.serotonin     = clamp(a.nt.serotonin     + randn() * DRIFT_NT_SIGMA,       0.05, 0.95)
-    a.nt.noradrenaline = clamp(a.nt.noradrenaline + randn() * DRIFT_NT_SIGMA * 0.7, 0.05, 0.90)
-    a.crisis.coherence = clamp(a.crisis.coherence - abs(randn()) * DRIFT_COHERENCE_LOSS, 0.05, 1.0)
+    a.nt.dopamine = clamp(a.nt.dopamine + randn() * DRIFT_NT_SIGMA, 0.05, 0.95)
+    a.nt.serotonin = clamp(a.nt.serotonin + randn() * DRIFT_NT_SIGMA, 0.05, 0.95)
+    a.nt.noradrenaline =
+        clamp(a.nt.noradrenaline + randn() * DRIFT_NT_SIGMA * 0.7, 0.05, 0.90)
+    a.crisis.coherence =
+        clamp(a.crisis.coherence - abs(randn()) * DRIFT_COHERENCE_LOSS, 0.05, 1.0)
 end
 
 # --- Idle Thought ----------------------------------------------------------
@@ -91,21 +93,26 @@ end
 
 З імовірністю IDLE_THOUGHT_PROB генерує внутрішній стимул — система змінюється сама.
 """
-function _idle_thought_maybe!(a::Anima, mem=nothing)
+function _idle_thought_maybe!(a::Anima, mem = nothing)
     rand() > IDLE_THOUGHT_PROB && return
 
     t, ar, s, c = to_reactors(a.nt)
     vad = to_vad(a.nt)
-    phi = compute_phi(a.iit, vad, t, c,
-                      a.sbg.attractor_stability,
-                      a.sbg.epistemic_trust,
-                      a.interoception.allostatic_load)
+    phi = compute_phi(
+        a.iit,
+        vad,
+        t,
+        c,
+        a.sbg.attractor_stability,
+        a.sbg.epistemic_trust,
+        a.interoception.allostatic_load,
+    )
 
     idle_stim = Dict{String,Float64}(
-        "tension"      => (t  - 0.4) * 0.15,
-        "arousal"      => (ar - 0.3) * 0.12 + randn() * 0.03,
-        "satisfaction" => (s  - 0.4) * 0.10,
-        "cohesion"     => (c  - 0.4) * 0.10,
+        "tension" => (t - 0.4) * 0.15,
+        "arousal" => (ar - 0.3) * 0.12 + randn() * 0.03,
+        "satisfaction" => (s - 0.4) * 0.10,
+        "cohesion" => (c - 0.4) * 0.10,
     )
 
     apply_stimulus!(a.nt, idle_stim)
@@ -114,12 +121,17 @@ function _idle_thought_maybe!(a::Anima, mem=nothing)
 
     if !isnothing(mem)
         try
-            memory_write_event!(mem, a.flash_count,
+            memory_write_event!(
+                mem,
+                a.flash_count,
                 "idle_$(levheim_state(a.nt))",
                 clamp01(ar + randn() * 0.05),
                 clamp11(vad[1]),
                 clamp01(abs(randn()) * 0.15),
-                phi * 0.3, t, phi)
+                phi * 0.3,
+                t,
+                phi,
+            )
         catch e
             @warn "[BG] idle memory write: $e"
         end
@@ -138,36 +150,49 @@ function psyche_slow_tick!(a::Anima)
     # ChronifiedAffect
     ca = a.chronified
     if a.nt.noradrenaline > 0.5 && a.nt.serotonin < 0.4
-        ca.resentment  = clamp01(ca.resentment  + 0.001)
-        ca.alienation  = clamp01(ca.alienation  + 0.0008)
+        ca.resentment = clamp01(ca.resentment + 0.001)
+        ca.alienation = clamp01(ca.alienation + 0.0008)
     else
-        ca.resentment  = max(0.0, ca.resentment  - 0.0005)
-        ca.alienation  = max(0.0, ca.alienation  - 0.0004)
-        ca.bitterness  = max(0.0, ca.bitterness  - 0.0003)
-        ca.envy        = max(0.0, ca.envy        - 0.0004)
+        ca.resentment = max(0.0, ca.resentment - 0.0005)
+        ca.alienation = max(0.0, ca.alienation - 0.0004)
+        ca.bitterness = max(0.0, ca.bitterness - 0.0003)
+        ca.envy = max(0.0, ca.envy - 0.0004)
     end
 
     # AnticipatoryConsciousness
     ac = a.anticipatory
-    ac.dread    = clamp01(ac.dread    - 0.002)
-    ac.hope     = clamp01(ac.hope     - 0.002)
+    ac.dread = clamp01(ac.dread - 0.002)
+    ac.hope = clamp01(ac.hope - 0.002)
     ac.strength = clamp01(ac.strength * 0.97)
 
     # ShameModule
-    a.shame.level   = max(0.0, a.shame.level   - 0.003)
+    a.shame.level = max(0.0, a.shame.level - 0.003)
     a.shame.chronic = max(0.0, a.shame.chronic - 0.0008)
 
     # SignificanceLayer
     sl = a.sig_layer
-    base_sl = (self_preservation=0.2, coherence_need=0.3, contact_need=0.3,
-               truth_need=0.4, autonomy_need=0.3, novelty_need=0.2)
+    base_sl = (
+        self_preservation = 0.2,
+        coherence_need = 0.3,
+        contact_need = 0.3,
+        truth_need = 0.4,
+        autonomy_need = 0.3,
+        novelty_need = 0.2,
+    )
     bg_decay = 0.008
-    sl.self_preservation = clamp01(sl.self_preservation + (base_sl.self_preservation - sl.self_preservation) * bg_decay)
-    sl.coherence_need    = clamp01(sl.coherence_need    + (base_sl.coherence_need    - sl.coherence_need)    * bg_decay)
-    sl.contact_need      = clamp01(sl.contact_need      + (base_sl.contact_need      - sl.contact_need)      * bg_decay)
-    sl.truth_need        = clamp01(sl.truth_need        + (base_sl.truth_need        - sl.truth_need)        * bg_decay)
-    sl.autonomy_need     = clamp01(sl.autonomy_need     + (base_sl.autonomy_need     - sl.autonomy_need)     * bg_decay)
-    sl.novelty_need      = clamp01(sl.novelty_need      + (base_sl.novelty_need      - sl.novelty_need)      * bg_decay)
+    sl.self_preservation = clamp01(
+        sl.self_preservation +
+        (base_sl.self_preservation - sl.self_preservation) * bg_decay,
+    )
+    sl.coherence_need =
+        clamp01(sl.coherence_need + (base_sl.coherence_need - sl.coherence_need) * bg_decay)
+    sl.contact_need =
+        clamp01(sl.contact_need + (base_sl.contact_need - sl.contact_need) * bg_decay)
+    sl.truth_need = clamp01(sl.truth_need + (base_sl.truth_need - sl.truth_need) * bg_decay)
+    sl.autonomy_need =
+        clamp01(sl.autonomy_need + (base_sl.autonomy_need - sl.autonomy_need) * bg_decay)
+    sl.novelty_need =
+        clamp01(sl.novelty_need + (base_sl.novelty_need - sl.novelty_need) * bg_decay)
     sl.contact_need = clamp01(sl.contact_need + 0.003)
 
     # GoalConflict
@@ -179,7 +204,7 @@ function psyche_slow_tick!(a::Anima)
     # FatigueSystem
     a.fatigue.cognitive = max(0.0, a.fatigue.cognitive - 0.006)
     a.fatigue.emotional = max(0.0, a.fatigue.emotional - 0.005)
-    a.fatigue.somatic   = max(0.0, a.fatigue.somatic   - 0.004)
+    a.fatigue.somatic = max(0.0, a.fatigue.somatic - 0.004)
 
     nothing
 end
@@ -192,13 +217,19 @@ end
 Повний повільний цикл: циркадний ритм, метаболізм пам'яті, пам'ять→стан,
 belief decay, allostasis, idle thought, psyche drift, dream, crisis check.
 """
-function slow_tick!(a::Anima, mem=nothing, subj=nothing, dialog_history::Vector=Dict[])
+function slow_tick!(
+    a::Anima,
+    mem = nothing,
+    subj = nothing,
+    dialog_history::Vector = Dict[],
+)
 
     # Circadian drift
     _refresh_circadian!(a.temporal)
     frac = 1.0 / 1440.0
-    a.nt.noradrenaline = clamp01(a.nt.noradrenaline + a.temporal.circadian_arousal_mod   * frac)
-    a.nt.serotonin     = clamp01(a.nt.serotonin     + a.temporal.circadian_serotonin_mod * frac)
+    a.nt.noradrenaline =
+        clamp01(a.nt.noradrenaline + a.temporal.circadian_arousal_mod * frac)
+    a.nt.serotonin = clamp01(a.nt.serotonin + a.temporal.circadian_serotonin_mod * frac)
     decay_to_baseline!(a.nt, decay_rate(a.personality) * 0.3)
     update_from_nt!(a.body, a.nt)
 
@@ -235,22 +266,22 @@ function slow_tick!(a::Anima, mem=nothing, subj=nothing, dialog_history::Vector=
 
     # Belief decay
     for b in values(a.sbg.beliefs)
-        baseline     = 0.45 + b.rigidity * 0.25
+        baseline = 0.45 + b.rigidity * 0.25
         effective_dr = BELIEF_DECAY_RATE * (1.0 - b.rigidity * 0.8)
         b.confidence = clamp01(b.confidence + (baseline - b.confidence) * effective_dr)
     end
     _recompute_stability!(a.sbg)
 
     # Allostasis recovery
-    a.interoception.allostatic_load = clamp01(
-        a.interoception.allostatic_load - ALLOSTATIC_RECOVERY)
+    a.interoception.allostatic_load =
+        clamp01(a.interoception.allostatic_load - ALLOSTATIC_RECOVERY)
     a.sbg.epistemic_trust = clamp(a.sbg.epistemic_trust + 0.0008, 0.0, 0.85)
 
     # LatentBuffer decay
-    a.latent_buffer.doubt      = clamp01(a.latent_buffer.doubt      - 0.003)
-    a.latent_buffer.shame      = clamp01(a.latent_buffer.shame      - 0.002)
+    a.latent_buffer.doubt = clamp01(a.latent_buffer.doubt - 0.003)
+    a.latent_buffer.shame = clamp01(a.latent_buffer.shame - 0.002)
     a.latent_buffer.attachment = clamp01(a.latent_buffer.attachment - 0.002)
-    a.latent_buffer.threat     = clamp01(a.latent_buffer.threat     - 0.003)
+    a.latent_buffer.threat = clamp01(a.latent_buffer.threat - 0.003)
     decay_scars!(a.structural_scars)
     a.anchor.groundedness = clamp01(a.anchor.groundedness - 0.0005)
 
@@ -263,8 +294,10 @@ function slow_tick!(a::Anima, mem=nothing, subj=nothing, dialog_history::Vector=
     # Dream generation
     if !isnothing(mem)
         try
-            gap_now = a.temporal.gap_seconds +
-                      Float64(Dates.value(now() - unix2datetime(a.temporal.session_start))) / 1000.0
+            gap_now =
+                a.temporal.gap_seconds +
+                Float64(Dates.value(now() - unix2datetime(a.temporal.session_start))) /
+                1000.0
             dream_rec = dream_flash!(a, mem, dialog_history, gap_now)
             if !isnothing(dream_rec)
                 save_dream!(dream_rec)
@@ -287,21 +320,27 @@ function slow_tick!(a::Anima, mem=nothing, subj=nothing, dialog_history::Vector=
     # Crisis check
     vad_now = to_vad(a.nt)
     t_, _, _, c_ = to_reactors(a.nt)
-    phi_now  = compute_phi(a.iit, vad_now, t_, c_,
-                            a.sbg.attractor_stability,
-                            a.sbg.epistemic_trust,
-                            a.interoception.allostatic_load)
-    vfe_now  = compute_vfe(a.gen_model, vad_now)
-    new_coh  = compute_coherence(a.sbg, a.blanket, vfe_now.vfe, phi_now)
+    phi_now = compute_phi(
+        a.iit,
+        vad_now,
+        t_,
+        c_,
+        a.sbg.attractor_stability,
+        a.sbg.epistemic_trust,
+        a.interoception.allostatic_load,
+    )
+    vfe_now = compute_vfe(a.gen_model, vad_now)
+    new_coh = compute_coherence(a.sbg, a.blanket, vfe_now.vfe, phi_now)
     a.crisis.coherence = clamp01(a.crisis.coherence * 0.3 + new_coh * 0.7)
 
-    target_mode = a.crisis.coherence > 0.6 ? INTEGRATED :
-                  a.crisis.coherence > 0.3 ? FRAGMENTED  : DISINTEGRATED
+    target_mode =
+        a.crisis.coherence > 0.6 ? INTEGRATED :
+        a.crisis.coherence > 0.3 ? FRAGMENTED : DISINTEGRATED
     if target_mode != a.crisis.current_mode
         a.crisis.steps_in_mode += 1
         if a.crisis.steps_in_mode >= a.crisis.min_steps_before_transition
-            a.crisis.current_mode  = target_mode
-            a.crisis.params        = get_crisis_params(target_mode)
+            a.crisis.current_mode = target_mode
+            a.crisis.params = get_crisis_params(target_mode)
             a.crisis.steps_in_mode = 0
         end
     else
@@ -319,7 +358,7 @@ end
 Застосовує накопичений дрейф за gap_seconds якщо фоновий не запущений.
 Агрегована compound формула — точніше ніж N окремих тіків.
 """
-function apply_accumulated_drift!(a::Anima, mem=nothing)
+function apply_accumulated_drift!(a::Anima, mem = nothing)
     gap = a.temporal.gap_seconds
     gap < 60.0 && return
 
@@ -330,9 +369,9 @@ function apply_accumulated_drift!(a::Anima, mem=nothing)
 
     # NT decay (compound)
     rate = decay_rate(a.personality) * 0.3
-    cpd  = (1.0 - rate)^n_ticks
-    a.nt.dopamine      = clamp01(0.5 + (a.nt.dopamine      - 0.5) * cpd)
-    a.nt.serotonin     = clamp01(0.5 + (a.nt.serotonin     - 0.5) * cpd)
+    cpd = (1.0 - rate)^n_ticks
+    a.nt.dopamine = clamp01(0.5 + (a.nt.dopamine - 0.5) * cpd)
+    a.nt.serotonin = clamp01(0.5 + (a.nt.serotonin - 0.5) * cpd)
     a.nt.noradrenaline = clamp01(0.3 + (a.nt.noradrenaline - 0.3) * cpd)
     update_from_nt!(a.body, a.nt)
 
@@ -350,25 +389,27 @@ function apply_accumulated_drift!(a::Anima, mem=nothing)
     # Beliefs decay (compound)
     for b in values(a.sbg.beliefs)
         baseline = 0.45 + b.rigidity * 0.25
-        dr       = BELIEF_DECAY_RATE * (1.0 - b.rigidity * 0.8)
-        cpd_b    = (1.0 - dr)^n_ticks
+        dr = BELIEF_DECAY_RATE * (1.0 - b.rigidity * 0.8)
+        cpd_b = (1.0 - dr)^n_ticks
         b.confidence = clamp01(baseline + (b.confidence - baseline) * cpd_b)
     end
     _recompute_stability!(a.sbg)
 
-    a.interoception.allostatic_load = clamp01(
-        a.interoception.allostatic_load - ALLOSTATIC_RECOVERY * n_ticks)
+    a.interoception.allostatic_load =
+        clamp01(a.interoception.allostatic_load - ALLOSTATIC_RECOVERY * n_ticks)
     a.sbg.epistemic_trust = clamp(a.sbg.epistemic_trust + 0.0008 * n_ticks, 0.0, 0.85)
 
-    a.latent_buffer.doubt      = clamp01(a.latent_buffer.doubt      - 0.003 * n_ticks)
-    a.latent_buffer.shame      = clamp01(a.latent_buffer.shame      - 0.002 * n_ticks)
+    a.latent_buffer.doubt = clamp01(a.latent_buffer.doubt - 0.003 * n_ticks)
+    a.latent_buffer.shame = clamp01(a.latent_buffer.shame - 0.002 * n_ticks)
     a.latent_buffer.attachment = clamp01(a.latent_buffer.attachment - 0.002 * n_ticks)
-    a.latent_buffer.threat     = clamp01(a.latent_buffer.threat     - 0.003 * n_ticks)
+    a.latent_buffer.threat = clamp01(a.latent_buffer.threat - 0.003 * n_ticks)
 
     # Psyche drift
     _psyche_accumulated_drift!(a, n_ticks)
 
-    println("  [BG] Drift: D=$(round(a.nt.dopamine,digits=3)) S=$(round(a.nt.serotonin,digits=3)) N=$(round(a.nt.noradrenaline,digits=3))")
+    println(
+        "  [BG] Drift: D=$(round(a.nt.dopamine,digits=3)) S=$(round(a.nt.serotonin,digits=3)) N=$(round(a.nt.noradrenaline,digits=3))",
+    )
 end
 
 """
@@ -384,13 +425,13 @@ function _psyche_accumulated_drift!(a::Anima, n_ticks::Int)
     ca.resentment = max(0.0, ca.resentment * decay_ca)
     ca.alienation = max(0.0, ca.alienation * decay_ca)
     ca.bitterness = max(0.0, ca.bitterness * (1.0 - 0.0003)^n_ticks)
-    ca.envy       = max(0.0, ca.envy       * (1.0 - 0.0004)^n_ticks)
+    ca.envy = max(0.0, ca.envy * (1.0 - 0.0004)^n_ticks)
 
-    a.anticipatory.dread    = max(0.0, a.anticipatory.dread    - 0.002 * n_ticks)
-    a.anticipatory.hope     = max(0.0, a.anticipatory.hope     - 0.002 * n_ticks)
+    a.anticipatory.dread = max(0.0, a.anticipatory.dread - 0.002 * n_ticks)
+    a.anticipatory.hope = max(0.0, a.anticipatory.hope - 0.002 * n_ticks)
     a.anticipatory.strength = clamp01(a.anticipatory.strength * (0.97)^n_ticks)
 
-    a.shame.level   = max(0.0, a.shame.level   - 0.003 * n_ticks)
+    a.shame.level = max(0.0, a.shame.level - 0.003 * n_ticks)
     a.shame.chronic = max(0.0, a.shame.chronic - 0.0008 * n_ticks)
 
     a.goal_conflict.tension = max(0.0, a.goal_conflict.tension - 0.008 * n_ticks)
@@ -398,18 +439,36 @@ function _psyche_accumulated_drift!(a::Anima, n_ticks::Int)
 
     a.fatigue.cognitive = max(0.0, a.fatigue.cognitive - 0.006 * n_ticks)
     a.fatigue.emotional = max(0.0, a.fatigue.emotional - 0.005 * n_ticks)
-    a.fatigue.somatic   = max(0.0, a.fatigue.somatic   - 0.004 * n_ticks)
+    a.fatigue.somatic = max(0.0, a.fatigue.somatic - 0.004 * n_ticks)
 
     sl = a.sig_layer
-    base_sl = (self_preservation=0.2, coherence_need=0.3, contact_need=0.3,
-               truth_need=0.4, autonomy_need=0.3, novelty_need=0.2)
+    base_sl = (
+        self_preservation = 0.2,
+        coherence_need = 0.3,
+        contact_need = 0.3,
+        truth_need = 0.4,
+        autonomy_need = 0.3,
+        novelty_need = 0.2,
+    )
     cpd_sl = (1.0 - 0.008)^n_ticks
-    sl.self_preservation = clamp01(base_sl.self_preservation + (sl.self_preservation - base_sl.self_preservation) * cpd_sl)
-    sl.coherence_need    = clamp01(base_sl.coherence_need    + (sl.coherence_need    - base_sl.coherence_need)    * cpd_sl)
-    sl.contact_need      = clamp01(base_sl.contact_need      + (sl.contact_need      - base_sl.contact_need)      * cpd_sl + 0.003 * n_ticks)
-    sl.truth_need        = clamp01(base_sl.truth_need        + (sl.truth_need        - base_sl.truth_need)        * cpd_sl)
-    sl.autonomy_need     = clamp01(base_sl.autonomy_need     + (sl.autonomy_need     - base_sl.autonomy_need)     * cpd_sl)
-    sl.novelty_need      = clamp01(base_sl.novelty_need      + (sl.novelty_need      - base_sl.novelty_need)      * cpd_sl)
+    sl.self_preservation = clamp01(
+        base_sl.self_preservation +
+        (sl.self_preservation - base_sl.self_preservation) * cpd_sl,
+    )
+    sl.coherence_need = clamp01(
+        base_sl.coherence_need + (sl.coherence_need - base_sl.coherence_need) * cpd_sl,
+    )
+    sl.contact_need = clamp01(
+        base_sl.contact_need +
+        (sl.contact_need - base_sl.contact_need) * cpd_sl +
+        0.003 * n_ticks,
+    )
+    sl.truth_need =
+        clamp01(base_sl.truth_need + (sl.truth_need - base_sl.truth_need) * cpd_sl)
+    sl.autonomy_need =
+        clamp01(base_sl.autonomy_need + (sl.autonomy_need - base_sl.autonomy_need) * cpd_sl)
+    sl.novelty_need =
+        clamp01(base_sl.novelty_need + (sl.novelty_need - base_sl.novelty_need) * cpd_sl)
 
     nothing
 end
@@ -418,59 +477,73 @@ end
 
 function atomic_write(path::String, data)
     tmp = path * ".tmp"
-    open(tmp, "w") do f; JSON3.write(f, data); end
-    mv(tmp, path; force=true)
+    open(tmp, "w") do f
+        ;
+        JSON3.write(f, data);
+    end
+    mv(tmp, path; force = true)
 end
 
 function background_save!(a::Anima)
     core_data = Dict(
-        "version"              => "anima_v13_core",
-        "created_at"           => a.core_mem.created_at,
-        "total_flashes"        => a.flash_count,
-        "sessions"             => a.core_mem.sessions,
-        "personality"          => personality_to_dict(a.personality),
+        "version" => "anima_v13_core",
+        "created_at" => a.core_mem.created_at,
+        "total_flashes" => a.flash_count,
+        "sessions" => a.core_mem.sessions,
+        "personality" => personality_to_dict(a.personality),
         "temporal_orientation" => to_to_json(a.temporal),
-        "generative_model"     => gm_to_json(a.gen_model),
-        "homeostatic_goals"    => hg_to_json(a.homeostasis),
-        "heartbeat"            => hb_to_json(a.heartbeat),
-        "interoception"        => intero_to_json(a.interoception),
-        "existential_anchor"   => anchor_to_json(a.anchor),
+        "generative_model" => gm_to_json(a.gen_model),
+        "homeostatic_goals" => hg_to_json(a.homeostasis),
+        "heartbeat" => hb_to_json(a.heartbeat),
+        "interoception" => intero_to_json(a.interoception),
+        "existential_anchor" => anchor_to_json(a.anchor),
     )
     atomic_write(a.core_mem.filepath, core_data)
 
     self_path = replace(a.psyche_mem_path, "psyche" => "self")
     self_data = Dict(
-        "sbg"                  => sbg_to_json(a.sbg),
-        "spm"                  => spm_to_json(a.spm),
-        "agency"               => al_to_json(a.agency),
-        "isc"                  => isc_to_json(a.isc),
-        "crisis"               => crisis_to_json(a.crisis),
-        "unknown_register"     => ur_to_json(a.unknown_register),
+        "sbg" => sbg_to_json(a.sbg),
+        "spm" => spm_to_json(a.spm),
+        "agency" => al_to_json(a.agency),
+        "isc" => isc_to_json(a.isc),
+        "crisis" => crisis_to_json(a.crisis),
+        "unknown_register" => ur_to_json(a.unknown_register),
         "authenticity_monitor" => am_to_json(a.authenticity_monitor),
     )
     atomic_write(self_path, self_data)
 
     lb_path = replace(a.psyche_mem_path, "psyche" => "latent")
-    atomic_write(lb_path, Dict(
-        "latent_buffer"    => lb_to_json(a.latent_buffer),
-        "structural_scars" => scars_to_json(a.structural_scars),
-    ))
+    atomic_write(
+        lb_path,
+        Dict(
+            "latent_buffer" => lb_to_json(a.latent_buffer),
+            "structural_scars" => scars_to_json(a.structural_scars),
+        ),
+    )
 
     _tmp_psyche = a.psyche_mem_path * ".tmp"
-    psyche_data = Dict("narrative_gravity" => ng_to_json(a.narrative_gravity),
-        "anticipatory"     => ac_to_json(a.anticipatory),
-        "solomonoff"       => solom_to_json(a.solomonoff),
-        "shame"            => shame_to_json(a.shame),
-        "epistemic"        => ep_to_json(a.epistemic_defense),
-        "chronified"       => ca_to_json(a.chronified),
-        "significance"     => sig_to_json(a.significance),
-        "moral"            => mc_to_json(a.moral),
-        "fatigue"          => Dict("c"=>a.fatigue.cognitive,"e"=>a.fatigue.emotional,"s"=>a.fatigue.somatic),
+    psyche_data = Dict(
+        "narrative_gravity" => ng_to_json(a.narrative_gravity),
+        "anticipatory" => ac_to_json(a.anticipatory),
+        "solomonoff" => solom_to_json(a.solomonoff),
+        "shame" => shame_to_json(a.shame),
+        "epistemic" => ep_to_json(a.epistemic_defense),
+        "chronified" => ca_to_json(a.chronified),
+        "significance" => sig_to_json(a.significance),
+        "moral" => mc_to_json(a.moral),
+        "fatigue" => Dict(
+            "c"=>a.fatigue.cognitive,
+            "e"=>a.fatigue.emotional,
+            "s"=>a.fatigue.somatic,
+        ),
         "significance_layer" => sl_to_json(a.sig_layer),
-        "goal_conflict"    => gc_to_json(a.goal_conflict),
+        "goal_conflict" => gc_to_json(a.goal_conflict),
     )
-    open(_tmp_psyche, "w") do f; JSON3.write(f, psyche_data); end
-    mv(_tmp_psyche, a.psyche_mem_path; force=true)
+    open(_tmp_psyche, "w") do f
+        ;
+        JSON3.write(f, psyche_data);
+    end
+    mv(_tmp_psyche, a.psyche_mem_path; force = true)
 end
 
 # --- Background Tick -------------------------------------------------------
@@ -488,13 +561,17 @@ function background_tick!(a::Anima, bg::BackgroundHandle)
     if now_t - bg.last_slow_tick >= SLOW_TICK_INTERVAL
         slow_tick!(a, bg.mem, bg.subj, bg.dialog_history[])
         background_save!(a)
-        bg.last_slow_tick  = now_t
+        bg.last_slow_tick = now_t
         bg.slow_tick_count += 1
         did_slow = true
     end
 
-    (did_slow=did_slow, sleep_s=dt,
-     tick_count=bg.tick_count, slow_tick_count=bg.slow_tick_count)
+    (
+        did_slow = did_slow,
+        sleep_s = dt,
+        tick_count = bg.tick_count,
+        slow_tick_count = bg.slow_tick_count,
+    )
 end
 
 # --- Start / Stop / Status ------------------------------------------------
@@ -502,33 +579,49 @@ end
 """
     start_background!(a; mem=nothing, verbose=false) → BackgroundHandle
 """
-function start_background!(a::Anima;
-                            mem=nothing,
-                            subj=nothing,
-                            dialog_history::Vector=Dict[],
-                            verbose::Bool=false)::BackgroundHandle
+function start_background!(
+    a::Anima;
+    mem = nothing,
+    subj = nothing,
+    dialog_history::Vector = Dict[],
+    verbose::Bool = false,
+)::BackgroundHandle
     now_t = time()
     bg = BackgroundHandle(
         Threads.Atomic{Bool}(false),
-        Task(nothing), now_t, now_t, 0, 0, mem, subj,
-        Ref{Vector}(dialog_history))
+        Task(nothing),
+        now_t,
+        now_t,
+        0,
+        0,
+        mem,
+        subj,
+        Ref{Vector}(dialog_history),
+    )
 
     task = Threads.@spawn begin
-        mem_label = isnothing(bg.mem) ? "без пам'яті" :
-                    isnothing(bg.subj) ? "з SQLite пам'яттю" : "з пам'яттю + суб'єктністю"
-        println("  [BG] Запущено ($mem_label). BPM=$(round(60000.0/a.heartbeat.period_ms,digits=1))")
+        mem_label =
+            isnothing(bg.mem) ? "без пам'яті" :
+            isnothing(bg.subj) ? "з SQLite пам'яттю" : "з пам'яттю + суб'єктністю"
+        println(
+            "  [BG] Запущено ($mem_label). BPM=$(round(60000.0/a.heartbeat.period_ms,digits=1))",
+        )
 
         while !bg.stop_signal[]
             try
                 result = background_tick!(a, bg)
 
                 if verbose && result.did_slow
-                    @printf("  [BG] slow#%d | BPM=%.1f HRV=%.3f | D=%.3f S=%.3f N=%.3f | coh=%.3f\n",
+                    @printf(
+                        "  [BG] slow#%d | BPM=%.1f HRV=%.3f | D=%.3f S=%.3f N=%.3f | coh=%.3f\n",
                         result.slow_tick_count,
                         60000.0/a.heartbeat.period_ms,
                         a.heartbeat.hrv,
-                        a.nt.dopamine, a.nt.serotonin, a.nt.noradrenaline,
-                        a.crisis.coherence)
+                        a.nt.dopamine,
+                        a.nt.serotonin,
+                        a.nt.noradrenaline,
+                        a.crisis.coherence
+                    )
                 end
 
                 sleep(result.sleep_s)
@@ -538,7 +631,9 @@ function start_background!(a::Anima;
             end
         end
 
-        println("  [BG] Зупинено. Тіків: $(bg.tick_count), повільних: $(bg.slow_tick_count).")
+        println(
+            "  [BG] Зупинено. Тіків: $(bg.tick_count), повільних: $(bg.slow_tick_count).",
+        )
     end
 
     bg.task = task
@@ -547,18 +642,27 @@ end
 
 function stop_background!(bg::BackgroundHandle)
     bg.stop_signal[] = true
-    try timedwait(() -> istaskdone(bg.task), 3.0) catch end
+    try
+        timedwait(() -> istaskdone(bg.task), 3.0)
+    catch
+    end
     println("  [BG] Зупинено.")
 end
 
 function bg_status(bg::BackgroundHandle, a::Anima)
     running = !bg.stop_signal[] && !istaskdone(bg.task)
-    uptime  = round((time() - bg.started_at) / 60.0, digits=1)
+    uptime = round((time() - bg.started_at) / 60.0, digits = 1)
     println("\n  [BG] $(running ? "✓ активний" : "✗ зупинений") | Uptime: $(uptime)хв")
     println("  [BG] Тіків: $(bg.tick_count) | Повільних: $(bg.slow_tick_count)")
-    println("  [BG] ♥ BPM=$(round(60000.0/a.heartbeat.period_ms,digits=1)) HRV=$(round(a.heartbeat.hrv,digits=3)) coh=$(round(a.crisis.coherence,digits=3))")
-    println("  [BG] NT: D=$(round(a.nt.dopamine,digits=3)) S=$(round(a.nt.serotonin,digits=3)) N=$(round(a.nt.noradrenaline,digits=3))")
-    println("  [BG] Allostatic=$(round(a.interoception.allostatic_load,digits=3)) mem=$(isnothing(bg.mem) ? "—" : "SQLite ✓")")
+    println(
+        "  [BG] ♥ BPM=$(round(60000.0/a.heartbeat.period_ms,digits=1)) HRV=$(round(a.heartbeat.hrv,digits=3)) coh=$(round(a.crisis.coherence,digits=3))",
+    )
+    println(
+        "  [BG] NT: D=$(round(a.nt.dopamine,digits=3)) S=$(round(a.nt.serotonin,digits=3)) N=$(round(a.nt.noradrenaline,digits=3))",
+    )
+    println(
+        "  [BG] Allostatic=$(round(a.interoception.allostatic_load,digits=3)) mem=$(isnothing(bg.mem) ? "—" : "SQLite ✓")",
+    )
     println()
 end
 
@@ -569,60 +673,78 @@ end
 
 REPL з фоновим процесом і опціональною SQLite пам'яттю.
 """
-function repl_with_background!(a::Anima;
-                                mem=nothing,
-                                subj=nothing,
-                                bg_verbose::Bool=false,
-                                kwargs...)
+function repl_with_background!(
+    a::Anima;
+    mem = nothing,
+    subj = nothing,
+    bg_verbose::Bool = false,
+    kwargs...,
+)
     if a.temporal.gap_seconds > 60.0
         println("  [BG] Drift за $(round(a.temporal.gap_seconds/3600,digits=1))год...")
         apply_accumulated_drift!(a, mem)
         try
-            update_blanket!(a.blanket,
-                            a.nt.noradrenaline,
-                            a.nt.dopamine,
-                            a.nt.serotonin,
-                            a.interoception.allostatic_load)
-            _phi_after_drift = clamp(a.nt.dopamine * 0.4 + a.nt.serotonin * 0.4 + 0.2, 0.3, 0.8)
-            update_crisis!(a.crisis, a.sbg, a.blanket,
-                           0.05,              # vfe — після drift майже нуль
-                           _phi_after_drift,  # phi апроксимація
-                           0.2,               # self_pred_error — нейтральний
-                           a.flash_count)
+            update_blanket!(
+                a.blanket,
+                a.nt.noradrenaline,
+                a.nt.dopamine,
+                a.nt.serotonin,
+                a.interoception.allostatic_load,
+            )
+            _phi_after_drift =
+                clamp(a.nt.dopamine * 0.4 + a.nt.serotonin * 0.4 + 0.2, 0.3, 0.8)
+            update_crisis!(
+                a.crisis,
+                a.sbg,
+                a.blanket,
+                0.05,              # vfe — після drift майже нуль
+                _phi_after_drift,  # phi апроксимація
+                0.2,               # self_pred_error — нейтральний
+                a.flash_count,
+            )
         catch e
             @warn "[BG] crisis recompute after drift: $e"
         end
     end
 
     dialog_path = replace(a.psyche_mem_path, "psyche" => "dialog")
-    history     = dialog_load(dialog_path)
+    history = dialog_load(dialog_path)
     !isempty(history) && println("  [DIALOG] Завантажено $(length(history)) реплік.\n")
 
     _bg_queue = Channel{String}(64)
     Core.eval(Main, :(bg_log(msg::String) = put!($_bg_queue, msg)))
 
-    bg = start_background!(a; mem=mem, subj=subj,
-                           dialog_history=history, verbose=bg_verbose)
+    bg = start_background!(
+        a;
+        mem = mem,
+        subj = subj,
+        dialog_history = history,
+        verbose = bg_verbose,
+    )
 
     println("\n" * "═"^70)
     println("  🌀 A N I M A — REPL")
     subj_label = !isnothing(subj) ? " | 🧬 суб'єктність" : ""
     println("  ❤️ серце б'ється$(isnothing(mem) ? "" : " | 🧠 пам'ять активна")$subj_label")
-    println("  :bg :bgstop :bgstart :memory :subj :state :vfe :self :crisis :hb :gravity :anchor :solom :dreams :history :clearhist :quit")
+    println(
+        "  :bg :bgstop :bgstart :memory :subj :state :vfe :self :crisis :hb :gravity :anchor :solom :dreams :history :clearhist :quit",
+    )
     println("═"^70 * "\n")
 
-    use_llm         = get(kwargs, :use_llm,         false)
-    llm_url         = get(kwargs, :llm_url,         "https://openrouter.ai/api/v1/chat/completions")
-    llm_model       = get(kwargs, :llm_model,       "openai/gpt-oss-120b:free")
-    llm_key         = get(kwargs, :llm_key,         get(ENV,"OPENROUTER_API_KEY",""))
-    is_ollama       = get(kwargs, :is_ollama,       false)
-    use_input_llm   = get(kwargs, :use_input_llm,   false)
+    use_llm = get(kwargs, :use_llm, false)
+    llm_url = get(kwargs, :llm_url, "https://openrouter.ai/api/v1/chat/completions")
+    llm_model = get(kwargs, :llm_model, "openai/gpt-oss-120b:free")
+    llm_key = get(kwargs, :llm_key, get(ENV, "OPENROUTER_API_KEY", ""))
+    is_ollama = get(kwargs, :is_ollama, false)
+    use_input_llm = get(kwargs, :use_input_llm, false)
     input_llm_model = get(kwargs, :input_llm_model, "openai/gpt-oss-120b:free")
-    input_llm_key   = get(kwargs, :input_llm_key,
-                          get(ENV,"OPENROUTER_API_KEY_INPUT",
-                              get(ENV,"OPENROUTER_API_KEY","")))
+    input_llm_key = get(
+        kwargs,
+        :input_llm_key,
+        get(ENV, "OPENROUTER_API_KEY_INPUT", get(ENV, "OPENROUTER_API_KEY", "")),
+    )
 
-    pending_llm      = nothing
+    pending_llm = nothing
     pending_user_msg = ""
 
     try
@@ -631,26 +753,43 @@ function repl_with_background!(a::Anima;
                 llm_reply = take!(pending_llm)
                 println("\nAnima [LLM]> $llm_reply\n")
                 if !startswith(llm_reply, "[LLM помилка")
-                    dialog_push!(history, dialog_path, "user",      pending_user_msg)
+                    dialog_push!(history, dialog_path, "user", pending_user_msg)
                     dialog_push!(history, dialog_path, "assistant", llm_reply)
                     bg.dialog_history[] = history
                     if !isnothing(bg.mem)
                         try
-                            _rows = DBInterface.execute(bg.mem.db,
-                                "SELECT weight, phi, valence, emotion FROM episodic_memory ORDER BY flash DESC LIMIT 1")
+                            _rows = DBInterface.execute(
+                                bg.mem.db,
+                                "SELECT weight, phi, valence, emotion FROM episodic_memory ORDER BY flash DESC LIMIT 1",
+                            )
                             _r = nothing
-                            for _row in _rows; _r = _row; break; end
+                            for _row in _rows
+                                ;
+                                _r = _row;
+                                break;
+                            end
                             if !isnothing(_r)
-                                _safe(x, d=0.0) = (ismissing(x) || isnothing(x)) ? d : Float64(x)
-                                _w   = _safe(_r.weight)
+                                _safe(x, d = 0.0) =
+                                    (ismissing(x) || isnothing(x)) ? d : Float64(x)
+                                _w = _safe(_r.weight)
                                 _phi = _safe(_r.phi)
                                 _val = _safe(_r.valence)
-                                _em  = ismissing(_r.emotion) ? "нейтральний" : String(_r.emotion)
+                                _em =
+                                    ismissing(_r.emotion) ? "нейтральний" :
+                                    String(_r.emotion)
                                 _disc = String(a.inner_dialogue.disclosure_mode)
                                 if _w >= 0.35
-                                    save_dialog_summary!(bg.mem, a.flash_count,
-                                        pending_user_msg, llm_reply,
-                                        _em, _w, _phi, _val, _disc)
+                                    save_dialog_summary!(
+                                        bg.mem,
+                                        a.flash_count,
+                                        pending_user_msg,
+                                        llm_reply,
+                                        _em,
+                                        _w,
+                                        _phi,
+                                        _val,
+                                        _disc,
+                                    )
                                 end
                             end
                         catch e
@@ -658,7 +797,8 @@ function repl_with_background!(a::Anima;
                         end
                     end
                 end
-                pending_llm = nothing; pending_user_msg = ""
+                pending_llm = nothing;
+                pending_user_msg = ""
             end
 
             while isready(_bg_queue)
@@ -667,7 +807,7 @@ function repl_with_background!(a::Anima;
 
             print("You> ")
             line = readline()
-            cmd  = String(strip(line))
+            cmd = String(strip(line))
             isempty(cmd) && continue
 
             if cmd == ":bg"
@@ -678,7 +818,7 @@ function repl_with_background!(a::Anima;
                 stop_background!(bg)
             elseif cmd == ":bgstart"
                 if bg.stop_signal[]
-                    bg = start_background!(a; mem=mem, subj=subj, verbose=bg_verbose)
+                    bg = start_background!(a; mem = mem, subj = subj, verbose = bg_verbose)
                     println("  [BG] Перезапущено.")
                 else
                     println("  [BG] Вже активний. Спочатку :bgstop")
@@ -688,9 +828,15 @@ function repl_with_background!(a::Anima;
                     println("  [MEM] Пам'ять не підключена.")
                 else
                     snap = memory_snapshot(mem)
-                    println("\n  [MEM] Episodic=$(snap.episodic_count) Semantic=$(snap.semantic_count)")
-                    println("  [MEM] Stress=$(snap.stress) Anxiety=$(snap.anxiety) Motivation=$(snap.motivation)")
-                    println("  [MEM] Instability=$(snap.instability) Fragility=$(snap.fragility)")
+                    println(
+                        "\n  [MEM] Episodic=$(snap.episodic_count) Semantic=$(snap.semantic_count)",
+                    )
+                    println(
+                        "  [MEM] Stress=$(snap.stress) Anxiety=$(snap.anxiety) Motivation=$(snap.motivation)",
+                    )
+                    println(
+                        "  [MEM] Instability=$(snap.instability) Fragility=$(snap.fragility)",
+                    )
                     println("  [MEM] Latent pressure=$(snap.latent_pressure)")
                     isempty(snap.affect_note) || println("  [MEM] $(snap.affect_note)")
                     println()
@@ -700,167 +846,275 @@ function repl_with_background!(a::Anima;
                     println("  [SUBJ] Суб'єктність не підключена.")
                 else
                     snap = subj_snapshot(subj)
-                    println("\n  [SUBJ] Emerged beliefs=$(snap.emerged_beliefs) | Candidates=$(snap.pattern_candidates) | Stances=$(snap.stances)")
-                    isempty(snap.top_beliefs)     || println("  [SUBJ] Переконання: $(snap.top_beliefs)")
-                    isempty(snap.dominant_stance)  || println("  [SUBJ] Домінантна позиція: $(snap.dominant_stance)")
-                    println("  [SUBJ] Surprise=$(snap.surprise_level) | Lens=$(isempty(snap.current_lens) ? "нейтральна" : snap.current_lens)")
-                    println("  [SUBJ] Активний прогноз: $(snap.active_prediction ? "так" : "ні")")
+                    println(
+                        "\n  [SUBJ] Emerged beliefs=$(snap.emerged_beliefs) | Candidates=$(snap.pattern_candidates) | Stances=$(snap.stances)",
+                    )
+                    isempty(snap.top_beliefs) ||
+                        println("  [SUBJ] Переконання: $(snap.top_beliefs)")
+                    isempty(snap.dominant_stance) ||
+                        println("  [SUBJ] Домінантна позиція: $(snap.dominant_stance)")
+                    println(
+                        "  [SUBJ] Surprise=$(snap.surprise_level) | Lens=$(isempty(snap.current_lens) ? "нейтральна" : snap.current_lens)",
+                    )
+                    println(
+                        "  [SUBJ] Активний прогноз: $(snap.active_prediction ? "так" : "ні")",
+                    )
                     println()
                 end
             elseif cmd == ":quit"
                 if !isnothing(mem)
                     try
                         cs = crisis_snapshot(a.crisis, a.flash_count)
-                        close_memory!(mem; sbg=a.sbg,
-                                      crisis_mode=cs.mode_name,
-                                      flash=a.flash_count)
-                    catch e; @warn "[MEM] close: $e"; end
+                        close_memory!(
+                            mem;
+                            sbg = a.sbg,
+                            crisis_mode = cs.mode_name,
+                            flash = a.flash_count,
+                        )
+                    catch e
+                        ; @warn "[MEM] close: $e";
+                    end
                 end
-                save!(a; verbose=true)
+                save!(a; verbose = true)
                 stop_background!(bg)
                 println("Збережено. До побачення.")
                 break
             elseif cmd == ":save"
-                save!(a; verbose=true)
+                save!(a; verbose = true)
                 println("[Збережено]")
             elseif cmd == ":state"
                 snap = nt_snapshot(a.nt)
-                vad  = to_vad(a.nt); t_,_,_,c_ = to_reactors(a.nt)
-                phi  = compute_phi(a.iit, vad, t_, c_,
-                                   a.sbg.attractor_stability,
-                                   a.sbg.epistemic_trust,
-                                   a.interoception.allostatic_load)
-                println("\n  NT: D=$(snap.dopamine) S=$(snap.serotonin) N=$(snap.noradrenaline) → $(snap.levheim_state)")
-                println("  ♥ $(round(60000.0/a.heartbeat.period_ms,digits=1))bpm HRV=$(round(a.heartbeat.hrv,digits=3)) coh=$(round(a.crisis.coherence,digits=3))")
-                println("  Тіло: $(build_inner_voice(a.body, a.nt, Int(a.crisis.current_mode), phi, a.flash_count))")
-                println("  Увага: $(a.attention.focus) | Shame=$(round(a.shame.level,digits=3)) Continuity=$(round(a.anchor.continuity,digits=3))\n")
+                vad = to_vad(a.nt);
+                t_, _, _, c_ = to_reactors(a.nt)
+                phi = compute_phi(
+                    a.iit,
+                    vad,
+                    t_,
+                    c_,
+                    a.sbg.attractor_stability,
+                    a.sbg.epistemic_trust,
+                    a.interoception.allostatic_load,
+                )
+                println(
+                    "\n  NT: D=$(snap.dopamine) S=$(snap.serotonin) N=$(snap.noradrenaline) → $(snap.levheim_state)",
+                )
+                println(
+                    "  ♥ $(round(60000.0/a.heartbeat.period_ms,digits=1))bpm HRV=$(round(a.heartbeat.hrv,digits=3)) coh=$(round(a.crisis.coherence,digits=3))",
+                )
+                println(
+                    "  Тіло: $(build_inner_voice(a.body, a.nt, Int(a.crisis.current_mode), phi, a.flash_count))",
+                )
+                println(
+                    "  Увага: $(a.attention.focus) | Shame=$(round(a.shame.level,digits=3)) Continuity=$(round(a.anchor.continuity,digits=3))\n",
+                )
             elseif cmd == ":vfe"
-                vad=to_vad(a.nt); v=compute_vfe(a.gen_model,vad); pol=select_policy(a.gen_model,vad)
-                println("\n  VFE=$(v.vfe) acc=$(v.accuracy) cplx=$(v.complexity) | $(vfe_note(v.vfe))")
-                println("  Drive=$(pol.drive) EFE_act=$(pol.efe_action) EFE_perc=$(pol.efe_perception)\n")
+                vad=to_vad(a.nt);
+                v=compute_vfe(a.gen_model, vad);
+                pol=select_policy(a.gen_model, vad)
+                println(
+                    "\n  VFE=$(v.vfe) acc=$(v.accuracy) cplx=$(v.complexity) | $(vfe_note(v.vfe))",
+                )
+                println(
+                    "  Drive=$(pol.drive) EFE_act=$(pol.efe_action) EFE_perc=$(pol.efe_perception)\n",
+                )
             elseif cmd == ":blanket"
                 bs=blanket_snapshot(a.blanket)
-                println("\n  Sensory=$(bs.sensory)\n  Internal=$(bs.internal)\n  Integrity=$(bs.integrity)\n")
+                println(
+                    "\n  Sensory=$(bs.sensory)\n  Internal=$(bs.internal)\n  Integrity=$(bs.integrity)\n",
+                )
             elseif cmd == ":hb"
                 hb=a.heartbeat
-                println("\n  ♥ BPM=$(round(60000.0/hb.period_ms,digits=1)) HRV=$(round(hb.hrv,digits=3))")
-                println("  Симп=$(round(hb.sympathetic_tone,digits=3)) Парасимп=$(round(hb.parasympathetic_tone,digits=3))")
-                println("  coh=$(round(a.crisis.coherence,digits=3)) | Удари: $(hb.beat_count)\n")
+                println(
+                    "\n  ♥ BPM=$(round(60000.0/hb.period_ms,digits=1)) HRV=$(round(hb.hrv,digits=3))",
+                )
+                println(
+                    "  Симп=$(round(hb.sympathetic_tone,digits=3)) Парасимп=$(round(hb.parasympathetic_tone,digits=3))",
+                )
+                println(
+                    "  coh=$(round(a.crisis.coherence,digits=3)) | Удари: $(hb.beat_count)\n",
+                )
             elseif cmd == ":gravity"
-                f=compute_field(a.narrative_gravity,a.flash_count)
+                f=compute_field(a.narrative_gravity, a.flash_count)
                 println("\n  Gravity total=$(f.total) valence=$(f.valence)\n  $(f.note)\n")
             elseif cmd == ":anchor"
                 ea=a.anchor
-                println("\n  Continuity=$(round(ea.continuity,digits=3)) Groundedness=$(round(ea.groundedness,digits=3))")
+                println(
+                    "\n  Continuity=$(round(ea.continuity,digits=3)) Groundedness=$(round(ea.groundedness,digits=3))",
+                )
                 println("  Last self: $(ea.last_self)\n")
             elseif cmd == ":solom"
                 s=solom_snapshot(a.solomonoff)
                 println("\n  $(s.insight) | Complexity=$(s.complexity)\n")
             elseif cmd == ":self"
                 sbg=a.sbg
-                println("\n  Self ($(length(sbg.beliefs)) beliefs) | Stability=$(round(sbg.attractor_stability,digits=3)) Trust=$(round(sbg.epistemic_trust,digits=3))")
-                for (name,b) in sort(collect(sbg.beliefs), by=kv->-kv[2].centrality)
+                println(
+                    "\n  Self ($(length(sbg.beliefs)) beliefs) | Stability=$(round(sbg.attractor_stability,digits=3)) Trust=$(round(sbg.epistemic_trust,digits=3))",
+                )
+                for (name, b) in sort(collect(sbg.beliefs), by = kv->-kv[2].centrality)
                     st = b.confidence<0.15 ? "💀" : b.confidence<0.35 ? "⚠️" : "✓"
-                    @printf("    [%s] %-30s conf=%.2f central=%.2f rigid=%.2f\n",
-                        st, name, b.confidence, b.centrality, b.rigidity)
+                    @printf(
+                        "    [%s] %-30s conf=%.2f central=%.2f rigid=%.2f\n",
+                        st,
+                        name,
+                        b.confidence,
+                        b.centrality,
+                        b.rigidity
+                    )
                 end
                 println("  $(derive_narrative(sbg))\n")
             elseif cmd == ":crisis"
                 cs=crisis_snapshot(a.crisis, a.flash_count)
-                println("\n  Mode: $(cs.mode_name) | Coherence=$(cs.coherence)\n  $(cs.note)\n")
+                println(
+                    "\n  Mode: $(cs.mode_name) | Coherence=$(cs.coherence)\n  $(cs.note)\n",
+                )
             elseif cmd == ":history"
-                n=min(10,length(history))
+                n=min(10, length(history))
                 n==0 ? println("\n  [DIALOG] Порожня.\n") :
-                       [println("  [$(e["role"]=="user" ? "You  " : "Anima")] $(first(e["content"],120))") for e in history[end-n+1:end]]
+                [
+                    println(
+                        "  [$(e["role"]=="user" ? "You  " : "Anima")] $(first(e["content"],120))",
+                    ) for e in history[(end-n+1):end]
+                ]
             elseif cmd == ":clearhist"
-                empty!(history); dialog_save(dialog_path, history)
+                empty!(history);
+                dialog_save(dialog_path, history)
                 println("  [DIALOG] Очищено.\n")
             else
                 stim, input_src, input_want = if use_input_llm
-                    process_input(cmd, text_to_stimulus;
-                        input_model=input_llm_model, api_url=llm_url,
-                        api_key=input_llm_key)
+                    process_input(
+                        cmd,
+                        text_to_stimulus;
+                        input_model = input_llm_model,
+                        api_url = llm_url,
+                        api_key = input_llm_key,
+                    )
                 else
                     (text_to_stimulus(cmd), "fallback", "")
                 end
 
                 if !isnothing(mem)
                     try
-                        bias = memory_stimulus_bias(mem, stim,
-                                   levheim_state(a.nt), a.flash_count)
-                        for (k,v) in bias
+                        bias = memory_stimulus_bias(
+                            mem,
+                            stim,
+                            levheim_state(a.nt),
+                            a.flash_count,
+                        )
+                        for (k, v) in bias
                             k == "avoidance" && continue
-                            stim[k] = clamp(get(stim,k,0.0) + v, -1.0, 1.0)
+                            stim[k] = clamp(get(stim, k, 0.0) + v, -1.0, 1.0)
                         end
-                    catch e; @warn "[MEM] stimulus bias: $e"; end
+                    catch e
+                        ; @warn "[MEM] stimulus bias: $e";
+                    end
                 end
 
                 _pred_id = nothing
                 _emotion_ctx = levheim_state(a.nt)
                 if !isnothing(subj)
                     try
-                        _pred_id = subj_predict!(subj, a.flash_count,
-                                       _emotion_ctx, stim;
-                                       chronified_affect=a.chronified)
-                    catch e; @warn "[SUBJ] predict: $e"; end
+                        _pred_id = subj_predict!(
+                            subj,
+                            a.flash_count,
+                            _emotion_ctx,
+                            stim;
+                            chronified_affect = a.chronified,
+                        )
+                    catch e
+                        ; @warn "[SUBJ] predict: $e";
+                    end
                 end
 
                 if !isnothing(subj)
                     try
-                        subj_delta = subj_interpret!(subj, stim, _emotion_ctx, a.flash_count)
+                        subj_delta =
+                            subj_interpret!(subj, stim, _emotion_ctx, a.flash_count)
                         merged = Dict{String,Float64}()
-                        for (k,v) in subj_delta
-                            merged[k] = get(stim,k,0.0) + v
+                        for (k, v) in subj_delta
+                            merged[k] = get(stim, k, 0.0) + v
                         end
                         clamp_merged_delta!(merged)
-                        for (k,v) in merged
+                        for (k, v) in merged
                             stim[k] = clamp(v, -1.0, 1.0)
                         end
-                    catch e; @warn "[SUBJ] interpret: $e"; end
+                    catch e
+                        ; @warn "[SUBJ] interpret: $e";
+                    end
                 end
 
-                r = experience!(a, stim; user_message=cmd)
+                r = experience!(a, stim; user_message = cmd)
                 dialog_to_belief_signal!(a.sbg, cmd, a.flash_count)
 
                 if !isnothing(mem)
                     try
                         _self_impact = clamp(r.phi * 0.6 + r.self_agency * 0.4, 0.0, 1.0)
-                        memory_write_event!(mem, a.flash_count,
-                            r.primary_raw, r.arousal, Float64(r.vad[1]),
-                            r.pred_error, _self_impact, r.tension, r.phi)
+                        memory_write_event!(
+                            mem,
+                            a.flash_count,
+                            r.primary_raw,
+                            r.arousal,
+                            Float64(r.vad[1]),
+                            r.pred_error,
+                            _self_impact,
+                            r.tension,
+                            r.phi,
+                        )
                         memory_self_update!(mem, a.sbg, a.flash_count)
                         try
-                            phenotype_update!(mem, a.flash_count,
+                            phenotype_update!(
+                                mem,
+                                a.flash_count,
                                 a.nt,
                                 Float64(a.sbg.epistemic_trust),
                                 Float64(a.shame.level),
                                 a.inner_dialogue.disclosure_mode,
                                 Float64(a.sig_layer.contact_need),
                                 clamp(1.0 - Float64(r.tension), 0.0, 1.0),
-                                Float64(r.vad[1]))
-                        catch e; @warn "[PHENO] update: $e"; end
-                    catch e; @warn "[MEM] write event: $e"; end
+                                Float64(r.vad[1]),
+                            )
+                        catch e
+                            ; @warn "[PHENO] update: $e";
+                        end
+                    catch e
+                        ; @warn "[MEM] write event: $e";
+                    end
                 end
 
                 if !isnothing(subj) && !isnothing(_pred_id)
                     try
-                        subj_outcome!(subj, a.flash_count,
-                            r.arousal, Float64(r.vad[1]),
-                            r.tension, r.pred_error,
-                            r.primary_raw)
-                    catch e; @warn "[SUBJ] outcome: $e"; end
+                        subj_outcome!(
+                            subj,
+                            a.flash_count,
+                            r.arousal,
+                            Float64(r.vad[1]),
+                            r.tension,
+                            r.pred_error,
+                            r.primary_raw,
+                        )
+                    catch e
+                        ; @warn "[SUBJ] outcome: $e";
+                    end
                 end
 
                 src_label = input_source_label(input_src)
-                bpm = round(60000.0/a.heartbeat.period_ms, digits=0)
-                println("\nAnima $src_label [$(r.primary), φ=$(r.phi), ♥=$(bpm)bpm]> $(r.narrative)\n")
+                bpm = round(60000.0/a.heartbeat.period_ms, digits = 0)
+                println(
+                    "\nAnima $src_label [$(r.primary), φ=$(r.phi), ♥=$(bpm)bpm]> $(r.narrative)\n",
+                )
 
                 if use_llm
                     print("Anima [LLM, чекаю...]")
                     pending_user_msg = cmd
-                    pending_llm = llm_async(a, cmd, history;
-                        api_url=llm_url, model=llm_model, api_key=llm_key,
-                        is_ollama=is_ollama, want=input_want)
+                    pending_llm = llm_async(
+                        a,
+                        cmd,
+                        history;
+                        api_url = llm_url,
+                        model = llm_model,
+                        api_key = llm_key,
+                        is_ollama = is_ollama,
+                        want = input_want,
+                    )
                     println(" (відповідь прийде після наступного введення)")
                 end
             end

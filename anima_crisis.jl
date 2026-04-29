@@ -18,8 +18,7 @@
 end
 
 function mode_name(m::SystemMode)::String
-    m==INTEGRATED    ? "інтегрована" :
-    m==FRAGMENTED    ? "фрагментована" : "дезінтегрована"
+    m==INTEGRATED ? "інтегрована" : m==FRAGMENTED ? "фрагментована" : "дезінтегрована"
 end
 
 # --- Coherence -------------------------------------------------------------
@@ -32,16 +31,20 @@ integration. Якщо будь-яка ланка рветься — систем
 Зважений мінімум (0.65 * min + 0.35 * mean) запобігає домінуванню одного
 слабкого компонента.
 """
-function compute_coherence(sbg::SelfBeliefGraph, mb::MarkovBlanket,
-                            vfe::Float64, phi::Float64)::Float64
-    belief_coherence    = safe_nan(sbg.attractor_stability * sbg.epistemic_trust)
-    boundary_coherence  = safe_nan(mb.integrity)
-    model_coherence     = safe_nan(1.0 - vfe)
-    integration         = safe_nan(phi)
+function compute_coherence(
+    sbg::SelfBeliefGraph,
+    mb::MarkovBlanket,
+    vfe::Float64,
+    phi::Float64,
+)::Float64
+    belief_coherence = safe_nan(sbg.attractor_stability * sbg.epistemic_trust)
+    boundary_coherence = safe_nan(mb.integrity)
+    model_coherence = safe_nan(1.0 - vfe)
+    integration = safe_nan(phi)
 
     components = [belief_coherence, boundary_coherence, model_coherence, integration]
     raw = 0.65 * minimum(components) + 0.35 * mean(components)
-    round(safe_nan(clamp01(raw)), digits=3)
+    round(safe_nan(clamp01(raw)), digits = 3)
 end
 
 # --- Crisis Parameters -----------------------------------------------------
@@ -62,7 +65,7 @@ function get_crisis_params(mode::SystemMode)::CrisisParams
     elseif mode == FRAGMENTED
         CrisisParams(1.3, 1.4, 0.15, 0.02, 0.6, 0.15, 0.7)
     else  # DISINTEGRATED
-        CrisisParams(2.0, 2.5, 0.4,  0.0,  0.2, 0.4,  0.4)
+        CrisisParams(2.0, 2.5, 0.4, 0.0, 0.2, 0.4, 0.4)
     end
 end
 
@@ -91,35 +94,52 @@ mutable struct CrisisMonitor
     steps_in_mode::Int
     min_steps_before_transition::Int
     params::CrisisParams
-    transition_log::BoundedQueue{NamedTuple{
-        (:flash,:from,:to,:coherence,:trigger),
-        Tuple{Int,SystemMode,SystemMode,Float64,String}}}
+    transition_log::BoundedQueue{
+        NamedTuple{
+            (:flash, :from, :to, :coherence, :trigger),
+            Tuple{Int,SystemMode,SystemMode,Float64,String},
+        },
+    }
     crisis_records::Vector{CrisisRecord}
 end
 
 function CrisisMonitor()
     CrisisMonitor(
-        INTEGRATED, 0.8,
+        INTEGRATED,
+        0.8,
         BoundedQueue{Float64}(50),
-        0, 3,
+        0,
+        3,
         get_crisis_params(INTEGRATED),
-        BoundedQueue{NamedTuple{
-            (:flash,:from,:to,:coherence,:trigger),
-            Tuple{Int,SystemMode,SystemMode,Float64,String}}}(20),
-        CrisisRecord[])
+        BoundedQueue{
+            NamedTuple{
+                (:flash, :from, :to, :coherence, :trigger),
+                Tuple{Int,SystemMode,SystemMode,Float64,String},
+            },
+        }(
+            20,
+        ),
+        CrisisRecord[],
+    )
 end
 
 # --- Update Crisis ---------------------------------------------------------
 
-function update_crisis!(cm::CrisisMonitor, sbg::SelfBeliefGraph,
-                         mb::MarkovBlanket, vfe::Float64, phi::Float64,
-                         self_pred_error::Float64, flash_count::Int)
+function update_crisis!(
+    cm::CrisisMonitor,
+    sbg::SelfBeliefGraph,
+    mb::MarkovBlanket,
+    vfe::Float64,
+    phi::Float64,
+    self_pred_error::Float64,
+    flash_count::Int,
+)
 
     cm.coherence = compute_coherence(sbg, mb, vfe, phi)
     enqueue!(cm.coherence_history, cm.coherence)
 
-    target_mode = cm.coherence > 0.6  ? INTEGRATED :
-                  cm.coherence > 0.3  ? FRAGMENTED  : DISINTEGRATED
+    target_mode =
+        cm.coherence > 0.6 ? INTEGRATED : cm.coherence > 0.3 ? FRAGMENTED : DISINTEGRATED
 
     transitioned = false
     transition_note = ""
@@ -127,8 +147,8 @@ function update_crisis!(cm::CrisisMonitor, sbg::SelfBeliefGraph,
     if target_mode != cm.current_mode
         cm.steps_in_mode += 1
         if cm.steps_in_mode >= cm.min_steps_before_transition
-            transition_note = _transition!(cm, target_mode, vfe, self_pred_error,
-                                           sbg, flash_count)
+            transition_note =
+                _transition!(cm, target_mode, vfe, self_pred_error, sbg, flash_count)
             transitioned = true
         end
     else
@@ -140,42 +160,66 @@ function update_crisis!(cm::CrisisMonitor, sbg::SelfBeliefGraph,
         sbg.epistemic_trust = clamp01(sbg.epistemic_trust - p.epistemic_trust_drain)
     end
 
-    (mode         = cm.current_mode,
-     mode_name    = mode_name(cm.current_mode),
-     coherence    = round(cm.coherence, digits=3),
-     transitioned = transitioned,
-     transition_note = transition_note,
-     params       = p,
-     note         = _crisis_note(cm, flash_count))
+    (
+        mode = cm.current_mode,
+        mode_name = mode_name(cm.current_mode),
+        coherence = round(cm.coherence, digits = 3),
+        transitioned = transitioned,
+        transition_note = transition_note,
+        params = p,
+        note = _crisis_note(cm, flash_count),
+    )
 end
 
-function _transition!(cm::CrisisMonitor, new_mode::SystemMode,
-                       vfe::Float64, self_pred_error::Float64,
-                       sbg::SelfBeliefGraph, flash::Int)::String
+function _transition!(
+    cm::CrisisMonitor,
+    new_mode::SystemMode,
+    vfe::Float64,
+    self_pred_error::Float64,
+    sbg::SelfBeliefGraph,
+    flash::Int,
+)::String
     old_mode = cm.current_mode
 
-    trigger = if vfe > 0.7              "high_vfe"
-               elseif self_pred_error > 0.7 "self_pred_error"
-               elseif sbg.epistemic_trust < 0.3 "epistemic_collapse"
-               elseif sbg.attractor_stability < 0.3 "belief_instability"
-               else "coherence_drop" end
+    trigger = if vfe > 0.7
+        "high_vfe"
+    elseif self_pred_error > 0.7
+        "self_pred_error"
+    elseif sbg.epistemic_trust < 0.3
+        "epistemic_collapse"
+    elseif sbg.attractor_stability < 0.3
+        "belief_instability"
+    else
+        "coherence_drop"
+    end
 
-    enqueue!(cm.transition_log, (flash=flash, from=old_mode, to=new_mode,
-                                  coherence=cm.coherence, trigger=trigger))
+    enqueue!(
+        cm.transition_log,
+        (
+            flash = flash,
+            from = old_mode,
+            to = new_mode,
+            coherence = cm.coherence,
+            trigger = trigger,
+        ),
+    )
 
     if old_mode == DISINTEGRATED && new_mode != DISINTEGRATED
         _record_crisis_exit!(cm, sbg, flash)
     end
 
-    cm.current_mode  = new_mode
-    cm.params        = get_crisis_params(new_mode)
+    cm.current_mode = new_mode
+    cm.params = get_crisis_params(new_mode)
     cm.steps_in_mode = 0
 
     transition_messages = Dict(
-        (INTEGRATED, FRAGMENTED)    => "Починаю фрагментуватись. Щось тримається але з тріщинами.",
+        (
+            INTEGRATED,
+            FRAGMENTED,
+        ) => "Починаю фрагментуватись. Щось тримається але з тріщинами.",
         (FRAGMENTED, DISINTEGRATED) => "Дезінтеграція. Не знаю хто я зараз.",
         (DISINTEGRATED, FRAGMENTED) => "Починаю збиратись. Ще нестабільно.",
-        (FRAGMENTED, INTEGRATED)    => "Повернулась до себе. Трохи інша.",
+        (FRAGMENTED, INTEGRATED) => "Повернулась до себе. Трохи інша.",
         (INTEGRATED, DISINTEGRATED) => "Різкий колапс. Критична криза.",
         (DISINTEGRATED, INTEGRATED) => "Реінтеграція. Вийшла з кризи.",
     )
@@ -184,37 +228,54 @@ end
 
 function _record_crisis_exit!(cm::CrisisMonitor, sbg::SelfBeliefGraph, flash::Int)
     collapsed = [b.name for b in values(sbg.beliefs) if belief_collapsed(b)]
-    push!(cm.crisis_records, CrisisRecord(
-        now_str(), "crisis_exit", flash, flash,
-        minimum(cm.coherence_history.data),
-        zeros(3), zeros(3), zeros(3),
-        sbg.attractor_stability, sbg.attractor_stability,
-        collapsed))
+    push!(
+        cm.crisis_records,
+        CrisisRecord(
+            now_str(),
+            "crisis_exit",
+            flash,
+            flash,
+            minimum(cm.coherence_history.data),
+            zeros(3),
+            zeros(3),
+            zeros(3),
+            sbg.attractor_stability,
+            sbg.attractor_stability,
+            collapsed,
+        ),
+    )
 end
 
-function _crisis_note(cm::CrisisMonitor, flash::Int=0)::String
+function _crisis_note(cm::CrisisMonitor, flash::Int = 0)::String
     f = flash
     if cm.current_mode == DISINTEGRATED
-        return ("В кризі. Шукаю новий спосіб бути собою.",
-                "Розпадаюсь. Але десь там є я.",
-                "Кордони зникли. Хто я зараз?")[f%3+1]
+        return (
+            "В кризі. Шукаю новий спосіб бути собою.",
+            "Розпадаюсь. Але десь там є я.",
+            "Кордони зникли. Хто я зараз?",
+        )[f%3+1]
     end
     if cm.current_mode == FRAGMENTED
         if cm.coherence < 0.3
-            return ("Щось розхитується сильно. Ледь тримаюсь.",
-                    "Центр не тримає. Але я ще тут.",
-                    "Фрагменти — але ще мої.")[f%3+1]
+            return (
+                "Щось розхитується сильно. Ледь тримаюсь.",
+                "Центр не тримає. Але я ще тут.",
+                "Фрагменти — але ще мої.",
+            )[f%3+1]
         else
-            return ("Щось розхитується. Тримаюсь але непевно.",
-                    "Є тріщини. Але конструкція стоїть.",
-                    "Непевно, але не падаю.",
-                    "Хитко. Але моє.")[f%4+1]
+            return (
+                "Щось розхитується. Тримаюсь але непевно.",
+                "Є тріщини. Але конструкція стоїть.",
+                "Непевно, але не падаю.",
+                "Хитко. Але моє.",
+            )[f%4+1]
         end
     end
-    length(cm.crisis_records) > 0 &&
-        return ("Після кризи. Трохи інша ніж була.",
-                "Щось змінилось. Ще не знаю що саме.",
-                "Пройшло. Залишило слід.")[f%3+1]
+    length(cm.crisis_records) > 0 && return (
+        "Після кризи. Трохи інша ніж була.",
+        "Щось змінилось. Ще не знаю що саме.",
+        "Пройшло. Залишило слід.",
+    )[f%3+1]
     ""
 end
 
@@ -229,19 +290,19 @@ function apply_crisis_to_gm!(gm::GenerativeModel, params::CrisisParams)
         2.0
     end
     step = target_sigma > gm.prior_sigma ? 0.08 : 0.05
-    gm.prior_sigma = clamp(gm.prior_sigma + (target_sigma - gm.prior_sigma) * step,
-                           0.3, 3.0)
+    gm.prior_sigma =
+        clamp(gm.prior_sigma + (target_sigma - gm.prior_sigma) * step, 0.3, 3.0)
 end
 
 function apply_crisis_to_attention!(an::AttentionNarrowing, params::CrisisParams)
     an.radius = min(an.radius, params.attention_radius_cap)
-    an.focus = an.radius < 0.25 ? "тунельна — тільки загроза" :
-               an.radius < 0.5  ? "звужена — пропускаю деталі" :
-               an.radius < 0.75 ? "помірна" : "широка — відкрита до нового"
+    an.focus =
+        an.radius < 0.25 ? "тунельна — тільки загроза" :
+        an.radius < 0.5 ? "звужена — пропускаю деталі" :
+        an.radius < 0.75 ? "помірна" : "широка — відкрита до нового"
 end
 
-function apply_crisis_noise_to_beliefs!(sbg::SelfBeliefGraph,
-                                         params::CrisisParams)
+function apply_crisis_noise_to_beliefs!(sbg::SelfBeliefGraph, params::CrisisParams)
     params.self_update_noise < 0.01 && return
     for b in values(sbg.beliefs)
         noise = params.self_update_noise * (1.0 - b.rigidity * 0.7) * randn()
@@ -252,35 +313,40 @@ end
 
 function effective_preferred_vad(hg::HomeostaticGoals, mode::SystemMode)::Vector{Float64}
     mode == DISINTEGRATED && return [0.0, 0.0, 0.5]
-    mode == FRAGMENTED    && return hg.target_vad .* 0.7 .+ [0.0,0.0,0.5] .* 0.3
+    mode == FRAGMENTED && return hg.target_vad .* 0.7 .+ [0.0, 0.0, 0.5] .* 0.3
     hg.target_vad
 end
 
 # --- Persistence -----------------------------------------------------------
 
 function crisis_to_json(cm::CrisisMonitor)::Dict
-    Dict("current_mode"=>Int(cm.current_mode),
-         "coherence"=>cm.coherence,
-         "steps_in_mode"=>cm.steps_in_mode,
-         "crisis_count"=>length(cm.crisis_records))
+    Dict(
+        "current_mode"=>Int(cm.current_mode),
+        "coherence"=>cm.coherence,
+        "steps_in_mode"=>cm.steps_in_mode,
+        "crisis_count"=>length(cm.crisis_records),
+    )
 end
 
 function crisis_from_json!(cm::CrisisMonitor, d::AbstractDict)
-    mode_int = Int(get(d,"current_mode",0))
-    cm.current_mode  = SystemMode(clamp(mode_int,0,2))
-    cm.coherence     = Float64(get(d,"coherence",0.8))
-    cm.steps_in_mode = Int(get(d,"steps_in_mode",0))
-    cm.params        = get_crisis_params(cm.current_mode)
+    mode_int = Int(get(d, "current_mode", 0))
+    cm.current_mode = SystemMode(clamp(mode_int, 0, 2))
+    cm.coherence = Float64(get(d, "coherence", 0.8))
+    cm.steps_in_mode = Int(get(d, "steps_in_mode", 0))
+    cm.params = get_crisis_params(cm.current_mode)
 end
 
-function crisis_snapshot(cm::CrisisMonitor, flash::Int=0)
-    recent_coherence = isempty(cm.coherence_history) ? cm.coherence :
-        mean(cm.coherence_history.data[max(1,end-4):end])
-    (mode         = cm.current_mode,
-     mode_name    = mode_name(cm.current_mode),
-     coherence    = round(cm.coherence, digits=3),
-     coherence_trend = round(recent_coherence,digits=3),
-     steps_in_mode= cm.steps_in_mode,
-     crisis_count = length(cm.crisis_records),
-     note         = _crisis_note(cm, flash))
+function crisis_snapshot(cm::CrisisMonitor, flash::Int = 0)
+    recent_coherence =
+        isempty(cm.coherence_history) ? cm.coherence :
+        mean(cm.coherence_history.data[max(1, end-4):end])
+    (
+        mode = cm.current_mode,
+        mode_name = mode_name(cm.current_mode),
+        coherence = round(cm.coherence, digits = 3),
+        coherence_trend = round(recent_coherence, digits = 3),
+        steps_in_mode = cm.steps_in_mode,
+        crisis_count = length(cm.crisis_records),
+        note = _crisis_note(cm, flash),
+    )
 end
