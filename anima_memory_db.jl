@@ -8,13 +8,10 @@
 #   memory_write_event!    — після стимулу (буфер)
 #   memory_stimulus_bias   — між L0 і L1 (упередження стимулу)
 #   memory_nt_baseline!    — L1 (NT baseline з affect_state)
-#   memory_pred_bias       — L2 (викривлення prediction error)
 #   memory_self_update!    — після SelfBeliefGraph (← semantic)
-#   memory_crisis_load     — L6 (coherence ← структурне навантаження)
 #
 # Фоновий процес:
-#   start_memory_loop!     — decay + consolidation кожні N секунд
-#   stop_memory_loop!
+#   stop_memory_loop!      — зупинка циклу (цикл запускається через slow_tick!)
 
 using SQLite
 using Tables
@@ -562,33 +559,6 @@ end
 
 # --- Фоновий процес --------------------------------------------------------
 
-function start_memory_loop!(mem::MemoryDB; interval::Float64 = 60.0)
-    mem._loop_stop[] = false
-
-    task = Threads.@spawn begin
-        println("  [MEM] Фоновий цикл запущено (інтервал=$(interval)с).")
-        while !mem._loop_stop[]
-            try
-                sleep(interval)
-                mem._loop_stop[] && break
-
-                _memory_decay!(mem)
-                _memory_prune!(mem)
-                _memory_consolidate!(mem)
-                _refresh_cache!(mem)
-
-            catch e
-                @warn "[MEM] помилка в циклі: $e"
-                sleep(5.0)
-            end
-        end
-        println("  [MEM] Фоновий цикл зупинено.")
-    end
-
-    mem._loop_task = task
-    task
-end
-
 function stop_memory_loop!(mem::MemoryDB)
     mem._loop_stop[] = true
     if !isnothing(mem._loop_task)
@@ -904,29 +874,6 @@ SET value = MIN(?, MAX(?, value + ?))
     )
 end
 
-# --- Recall для state_template / narrative ----------------------------------
-
-function memory_recall_note(mem::MemoryDB, emotion::String, flash::Int)::String
-    rows = Tables.rowtable(DBInterface.execute(
-        mem.db,
-        """
-SELECT COUNT(*) as n, COALESCE(AVG(weight), 0.0) as avg_w
-FROM episodic_memory
-WHERE emotion = ? AND weight > 0.3
-""",
-        (emotion,),
-    ))
-
-    row = first(rows)
-    n = ismissing(row.n) ? 0 : Int(row.n)
-    n < 2 && return ""
-
-    avg_w = _fdb(row.avg_w)
-    avg_w > 0.6 && return "це траплялось ($n разів, сильний відбиток)"
-    avg_w > 0.4 && return "щось схоже вже було ($n разів)"
-    return ""
-end
-
 function memory_affect_note(mem::MemoryDB)::String
     isempty(mem._affect_cache) && return ""
     dominant = ""
@@ -1052,39 +999,6 @@ ON CONFLICT(key) DO UPDATE SET source = ?, updated = ?
 
     println("  [MEM] Identity snapshot збережено. Flash=$flash crisis=$crisis_mode")
     nothing
-end
-
-function memory_identity_drift(mem::MemoryDB)
-    _refresh_cache!(mem)
-
-    snap_instab = get(mem._semantic_cache, "snapshot:instability", 0.0)
-    snap_world = get(mem._semantic_cache, "snapshot:world_unc", 0.0)
-    snap_stress = get(mem._semantic_cache, "snapshot:stress", 0.0)
-    snap_etrust = get(mem._semantic_cache, "snapshot:epistemic_trust", 0.75)
-
-    curr_instab = get(mem._semantic_cache, "I_am_unstable", 0.0)
-    curr_world = get(mem._semantic_cache, "world_uncertainty", 0.0)
-    curr_stress = get(mem._affect_cache, "stress", 0.0)
-
-    drift =
-        sqrt(
-            (curr_instab - snap_instab)^2 +
-            (curr_world - snap_world)^2 +
-            (curr_stress - snap_stress)^2,
-        ) / sqrt(3.0)
-    drift = clamp(drift, 0.0, 1.0)
-
-    note =
-        drift > 0.5 ? "значний дрейф особистості між сесіями" :
-        drift > 0.25 ? "помітна зміна між сесіями" : drift > 0.1 ? "невеликий дрейф" : ""
-
-    (
-        drift = round(drift, digits = 3),
-        note = note,
-        instab_delta = round(curr_instab - snap_instab, digits = 3),
-        stress_delta = round(curr_stress - snap_stress, digits = 3),
-        etrust_snap = round(snap_etrust, digits = 3),
-    )
 end
 
 # --- Dialog Summaries ------------------------------------------------------

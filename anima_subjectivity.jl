@@ -905,13 +905,6 @@ WHERE key = ?
     nothing
 end
 
-# --- Surprise PE Bias -----------------------------------------------------
-
-function subj_surprise_pe_bias(subj::SubjectivityEngine)::Float64
-    subj._surprise_n < 3 && return 0.0
-    clamp(subj._surprise_accumulator * 0.4, 0.0, 0.12)
-end
-
 # --- Cache Refresh ---------------------------------------------------------
 
 function _subj_refresh_emerged!(subj::SubjectivityEngine)
@@ -1087,59 +1080,6 @@ function subj_snapshot(subj::SubjectivityEngine)
         current_lens = current_lens,
         active_prediction = !isnothing(subj._active_pred_id),
     )
-end
-
-# --- Інтеграція з фоновим циклом пам'яті ----------------------------------
-
-function extend_memory_loop!(mem, subj::SubjectivityEngine; interval::Float64 = 60.0)
-    mem._loop_stop[] = false
-    tick = Threads.Atomic{Int}(0)
-
-    task = Threads.@spawn begin
-        println("  [SUBJ+MEM] Розширений фоновий цикл запущено ($(interval)с).")
-        while !mem._loop_stop[]
-            try
-                sleep(interval)
-                mem._loop_stop[] && break
-
-                Threads.atomic_add!(tick, 1)
-                t = tick[]
-
-                _memory_decay!(mem)
-                _memory_prune!(mem)
-                _memory_consolidate!(mem)
-                _refresh_cache!(mem)
-
-                if t % 3 == 0
-                    subj_emerge_beliefs!(subj, t * 100)
-                end
-
-                DBInterface.execute(
-                    mem.db,
-                    """
-UPDATE positional_stances
-SET certainty       = certainty * ?,
-    avoidance_weight = avoidance_weight * ?,
-    approach_weight  = approach_weight  * ?
-WHERE certainty > 0.05
-""",
-                    (SUBJ_STANCE_DECAY, SUBJ_STANCE_DECAY, SUBJ_STANCE_DECAY),
-                )
-
-                if subj._stance_dirty || t % 5 == 0
-                    _subj_refresh_stances!(subj)
-                end
-
-            catch e
-                @warn "[SUBJ+MEM] помилка в циклі: $e"
-                sleep(5.0)
-            end
-        end
-        println("  [SUBJ+MEM] Цикл зупинено.")
-    end
-
-    mem._loop_task = task
-    task
 end
 
 # --- Delta Safety ---------------------------------------------------------

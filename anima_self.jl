@@ -366,12 +366,6 @@ function _self_pred_note(err::Float64, trend::Float64 = err)::String
     ""
 end
 
-function self_pred_trend(spm::SelfPredictiveModel, n::Int = 5)::Float64
-    isempty(spm.error_history) && return 0.0
-    hist = collect(spm.error_history)
-    safe_nan(mean(hist[max(1, end-n+1):end]))
-end
-
 spm_to_json(spm::SelfPredictiveModel) = Dict(
     "prior_mu" => spm.prior_mu,
     "prior_sigma" => spm.prior_sigma,
@@ -534,12 +528,6 @@ function _agency_result(al::AgencyLoop, flash::Int, intent::String)
         intent = intent,
         note = note,
     )
-end
-
-function agency_trend(al::AgencyLoop)::Float64
-    length(al.ownership_history) < 3 && return al.agency_confidence
-    hist = collect(al.ownership_history)
-    safe_nan(mean(hist[max(1, end-4):end]))
 end
 
 al_to_json(al::AgencyLoop) =

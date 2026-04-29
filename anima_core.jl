@@ -146,11 +146,6 @@ function to_vad(nt::NeurotransmitterState)::NTuple{3,Float64}
     (v, a, d)
 end
 
-function to_vad_vec(nt::NeurotransmitterState)::Vector{Float64}
-    v, a, d = to_vad(nt);
-    Float64[v, a, d]
-end
-
 function to_reactors(nt::NeurotransmitterState)::NTuple{4,Float64}
     tension = clamp01(nt.noradrenaline*0.7 + (1-nt.serotonin)*0.3)
     arousal = clamp01(nt.noradrenaline*0.5 + nt.dopamine*0.5)
@@ -159,10 +154,6 @@ function to_reactors(nt::NeurotransmitterState)::NTuple{4,Float64}
     (tension, arousal, satisfaction, cohesion)
 end
 
-function reactor_get(nt::NeurotransmitterState, name::String)::Float64
-    t, a, s, c = to_reactors(nt)
-    name=="tension" ? t : name=="arousal" ? a : name=="satisfaction" ? s : c
-end
 
 function apply_stimulus!(nt::NeurotransmitterState, delta::Dict{String,Float64})
     haskey(delta, "tension") &&
@@ -215,13 +206,6 @@ function update_from_nt!(body::EmbodiedState, nt::NeurotransmitterState)
     body.muscle_tension = clamp01(0.2 + nt.noradrenaline*0.6 + (1-nt.serotonin)*0.2)
     body.gut_feeling = clamp01(nt.dopamine*0.5 + nt.serotonin*0.5)
     body.breath_rate = clamp01(0.3 + nt.noradrenaline*0.4)
-end
-
-function somatic_marker(body::EmbodiedState)::String
-    body.muscle_tension>0.7 && body.heart_rate>0.7 && return "тіло стиснуте і прискорене"
-    body.gut_feeling < 0.3 && return "нутро тривожне"
-    body.gut_feeling > 0.7 && body.heart_rate < 0.5 && return "тіло спокійне і відкрите"
-    "тіло нейтральне"
 end
 
 function build_inner_voice(
