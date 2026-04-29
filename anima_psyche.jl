@@ -495,11 +495,6 @@ function activate_epistemic!(
     )
 end
 
-function distort(ed::EpistemicDefense, honest::String)::String
-    (isnothing(ed.active_bias) || ed.strength < 0.3) && return honest
-    get(EP_DISTORT, ed.active_bias, honest)
-end
-
 ep_to_json(ed::EpistemicDefense)=Dict("cost"=>ed.cost)
 function ep_from_json!(ed::EpistemicDefense, d::AbstractDict)
     ;

@@ -524,14 +524,6 @@ function memory_nt_baseline!(mem::MemoryDB, nt, flash::Int)
     nothing
 end
 
-function memory_pred_bias(mem::MemoryDB, pred_error::Float64, flash::Int)::Float64
-    _maybe_refresh!(mem, flash)
-    world_unc = get(mem._semantic_cache, "world_uncertainty", 0.0)
-    world_unc < 0.1 && return pred_error
-    amplifier = 1.0 + world_unc * MEM_MAX_PRED_BIAS / 0.5
-    return clamp(pred_error * amplifier, 0.0, 1.0)
-end
-
 function memory_self_update!(mem::MemoryDB, sbg, flash::Int)
     _maybe_refresh!(mem, flash; every = 20)
 
@@ -548,13 +540,6 @@ function memory_self_update!(mem::MemoryDB, sbg, flash::Int)
     end
 
     nothing
-end
-
-function memory_crisis_load(mem::MemoryDB, flash::Int)::Float64
-    _maybe_refresh!(mem, flash; every = 15)
-    fragility = get(mem._semantic_cache, "structural_fragility", 0.0)
-    fragility < 0.15 && return 0.0
-    return -clamp((fragility - 0.15) * 0.05, 0.0, 0.04)
 end
 
 # --- Фоновий процес --------------------------------------------------------
