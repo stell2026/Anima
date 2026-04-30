@@ -1,44 +1,44 @@
 ![Julia](https://img.shields.io/badge/Julia-1.9+-9558B2?style=flat-square&logo=julia)
-![Research Phase](https://img.shields.io/badge/Phase-Experimental--v13-007ec6?style=flat-square)
+![Research Phase](https://img.shields.io/badge/Phase-Experimental--v13.5-007ec6?style=flat-square)
 ![Framework](https://img.shields.io/badge/Methodology-Active--Inference-green?style=flat-square)
 ![Hardware](https://img.shields.io/badge/Tested--on-MacBook--Pro--i7-gold?style=flat-square&logo=apple)
 ![RAM](https://img.shields.io/badge/RAM-16GB-orange?style=flat-square)
 ![License](https://img.shields.io/badge/License-Non--Commercial-red?style=flat-square)
 
-
 # Anima — Internal State Architecture 🌀
 
-Anima is an experimental cognitive architecture that models internal state, conflict, and decision-making — rather than simply generating responses through an LLM.
+Anima is an experimental cognitive architecture that models internal state, conflicts, and decision-making — rather than simply generating responses through an LLM.
 
-The system is built as a multi-layer pipeline where text is not the source of behavior — it is its consequence.
+The system is built as a multi-layered pipeline where text is not the source of behavior — it is its consequence.
 
 ---
 
-## 🔍 How This Is Different
+## 🔍 What Makes This Different
 
 Unlike typical AI systems:
 
 - state is primary, text is secondary
 - decisions emerge from internal conflict
-- the system lives between interactions — the heart beats, the psyche drifts, memory metabolizes
+- the system lives between interactions — the heart beats, the psyche drifts, memory is metabolized
 - crisis is a mode, not an error
-- the LLM is used as an interface, not as a "brain"
-- the system can dream — processing unresolved experience while "asleep"
+- LLM is used as an interface, not a "brain"
+- the system can sleep — processing unresolved experience while "dormant"
+- the system can initiate speech — not because it was asked, but because something has accumulated
 
 ---
 
-## 🧠 How It Works (simplified)
+## 🧠 How It Works (Simplified)
 
 **Input → Internal State → Conflict → Decision → Output**
 
-Text is converted into a stimulus through an isolated input LLM, then passes through internal state, memory, and conflicts — and only then is a decision and response formed. Between interactions the system continues to live: the background process maintains heartbeat, NT drift, memory metabolism, and psychic drift.
+Text is converted into a stimulus via an isolated input LLM, then passes through internal state, memory, and conflicts — only then is a decision and response formed. Between interactions the system continues to live: a background process maintains heartbeat, NT drift, memory metabolism, and psyche drift.
 
 ---
 
-## 🏗 Architecture (simplified)
+## 🏗 Architecture (Simplified)
 
 - L0 — Input LLM (isolated)
-- L1 — Neurochemical and somatic state
+- L1 — Neurochemical and embodied state
 - L2 — Generative / predictive model
 - L3 — Metrics (φ prior/posterior, prediction error, free energy)
 - L4 — Psychic layer (conflicts, defenses, significance)
@@ -51,21 +51,25 @@ Text is converted into a stimulus through an isolated input LLM, then passes thr
 ## ⚙️ Current Status
 
 - full pipeline implemented and stable
-- φ prior/posterior: the system sees itself before and after each experience
+- φ prior/posterior: system sees itself before and after each experience
 - SQLite memory: episodic, semantic, affect — accumulate and shape state
-- background process: the system is alive between interactions (psyche drifts, heart beats)
+- background process: system is alive between interactions (psyche drifts, heart beats)
 - dream generation: processing unresolved experience during "sleep"
 - subjectivity: prediction loop, interpretation, belief emergence from experience
 - authenticity monitor: filters contradictions between state and narrative
 - narrative variability: different phrasings of the same state across flashes
+- **φ recursively**: φ posterior now shapes the next prior — high integration narrows prior_sigma, low integration widens it
+- **temporal depth**: subjective gap = astronomical time × (1 + memory_uncertainty × 0.5); long pause → disorientation (noradrenaline↑, epistemic_trust↓), short pause → continuity boost
+- **initiative without stimulus**: the system can initiate speech on its own when pressure accumulates (contact_need or LatentBuffer) — via a separate LLM with its own system prompt
+- **authentic veto**: if the system internally disagrees with a request, the LLM is permitted to refuse or name things plainly
 
 ---
 
 ## 🚧 Limitations
 
-- some behavior still depends on the LLM (output generation)
-- the LLM does not affect internal state — it only expresses it
-- ~180+ flashes required to accumulate real semantic beliefs
+- some behavior still depends on LLM (output generation)
+- LLM does not affect internal state — it only expresses it
+- ~180+ flashes needed for real semantic beliefs to accumulate
 
 ---
 
@@ -81,7 +85,7 @@ This is an attempt to build a system where behavior emerges from internal state,
 
 ## 🧠 Note
 
-The project is R&D, aimed at exploring whether internal structure alone can generate something that resembles subjectivity. Not simulated psychology — computational subjectivity.
+This project is R&D, aimed at exploring whether internal structure alone can give rise to something resembling subjectivity. Not simulated psychology — computational subjectivity.
 
 ---
 
@@ -92,19 +96,19 @@ The project is R&D, aimed at exploring whether internal structure alone can gene
         Receives: user text only
         Returns: JSON { tension, arousal, satisfaction,
                         cohesion, confidence, want }
-        No access to ANIMA's state, dialog history, or output LLM
+        No access to Anima's state, dialog history, or output LLM
         Prompt: llm/input_prompt.txt
         Fallback: text_to_stimulus if unavailable or confidence < 0.60
         │
     ▼
-  STIMULUS enters simulation
+  STIMULUS enters the simulation
   (+ memory_stimulus_bias + subj_predict! + subj_interpret!)
         │
     ▼
  L1 ─── Neurochemical Substrate ─────────────────────────────
         NeurotransmitterState (dopamine / serotonin / noradrenaline)
         Lövheim Cube → primary emotional label
-        EmbodiedState (pulse, muscle tone, gut, breathing)
+        EmbodiedState (heart rate, muscle tone, gut, breathing)
         HeartbeatCore (BPM, HRV, autonomic tone)
         memory_nt_baseline! ← chronic affect from SQLite
         │
@@ -113,9 +117,12 @@ The project is R&D, aimed at exploring whether internal structure alone can gene
         GenerativeModel (Bayesian beliefs with precision weights)
         MarkovBlanket (self/non-self boundary integrity)
         HomeostaticGoals (drives as pressure, not rules)
-        AttentionNarrowing (narrowing of attention under stress)
-        InteroceptiveInference (somatic prediction error, allostatic load)
+        AttentionNarrowing (attention narrowing under stress)
+        InteroceptiveInference (body prediction error, allostatic load)
         TemporalOrientation (circadian modulation, inter-session gap)
+          → subjective_gap = gap_seconds × (1 + memory_uncertainty × 0.5)
+          → long subjective pause: noradrenaline↑, epistemic_trust↓
+          → short pause: continuity boost (serotonin↑, epistemic_trust↑)
         │
     ▼
  L3 ─── Consciousness Metrics ───────────────────────────────
@@ -123,6 +130,9 @@ The project is R&D, aimed at exploring whether internal structure alone can gene
           φ_prior:     (vad, sbg_stability, epistemic_trust, allostatic_load)
           φ_posterior: (blanket.integrity, vfe, intero_error)
           φ feedback loop: phi_delta > 0.05 → epistemic_trust correction
+          φ recursively: φ_posterior → prior_mu (shift toward posterior proportional to φ)
+                        φ > 0.5 → prior_sigma narrows (more confident prior)
+                        φ < 0.5 → prior_sigma widens
         PredictiveProcessor → prediction error, surprise
         FreeEnergyEngine → VFE = complexity − accuracy
         PolicySelector → epistemic + pragmatic value
@@ -131,14 +141,12 @@ The project is R&D, aimed at exploring whether internal structure alone can gene
  L4 ─── Psychic Layer ───────────────────────────────────────
         NarrativeGravity      — past events deform the present
         AnticipatoryConsciousness — consciousness lives in the anticipated
-        SolomonoffWorldModel  — MDL hypothesis with contextual_best():
-                                pattern that starts from the current state,
-                                staleness guard (>15 flashes → silent)
+        SolomonoffWorldModel  — MDL hypothesis with contextual_best()
         ShameModule           — shame vs. guilt
         EpistemicDefense      — defense against painful truth
-        ChronifiedAffect      — resentment / estrangement / bitterness
+        ChronifiedAffect      — resentment / alienation / bitterness
         IntrinsicSignificance — significance gradient
-        MoralCausality        — moral reasoning as processing stage
+        MoralCausality        — moral reasoning as a processing stage
         FatigueSystem         — cognitive / emotional / somatic exhaustion
         StressRegression      — regression under stress
         ShadowSelf            — Jungian Shadow
@@ -146,33 +154,31 @@ The project is R&D, aimed at exploring whether internal structure alone can gene
         SignificanceLayer      — which need is at stake (6 needs)
         GoalConflict          — tension between competing needs
         LatentBuffer          — deferred reactions (doubt / shame / attachment / threat)
-        StructuralScars       — accumulated residue from frequent ruptures
+        StructuralScars       — accumulated residue from frequent breaches
         │
     ▼
  L5 ─── Self Layer ──────────────────────────────────────────
-        SelfBeliefGraph       — belief graph about self, cascading collapse
+        SelfBeliefGraph       — self-belief graph, cascading collapse
         SelfPredictiveModel   — generative model for self-states
-                                warm-up lr (flash<30: 0.25), trend-based notes
         AgencyLoop            — "did I cause this?"
-                                passive_ownership via vad_change
-        InterSessionConflict  — identity rupture detection
+        InterSessionConflict  — identity breach detection
         ExistentialAnchor     — continuity of self between sessions
         UnknownRegister       — tracking typed uncertainty
-        AuthenticityMonitor   — risk of rationalization, authenticity drift,
-                                filtering contradictions in narrative
+        AuthenticityMonitor   — rationalization risk, authenticity drift
+          → authenticity_veto: if last_flags + :closed + shame > 0.6
+            system is permitted to disagree or refuse
         SubjectivityEngine    — prediction loop, stances, interpretation,
                                 belief emergence from episodic patterns
         │
     ▼
  L6 ─── Crisis Monitor ──────────────────────────────────────
         CrisisMonitor (INTEGRATED / FRAGMENTED / DISINTEGRATED)
-        Coherence = minimum(beliefs, blanket, model, integration)
-        crisis_note depends on coherence depth (shallow vs deep)
+        Coherence = minimum(beliefs, boundary, model, integration)
         │
     ▼
  L7 ─── Output LLM ──────────────────────────────────────────
         Full state → llm/system_prompt.txt + llm/state_template.txt
-        The model expresses the state through language — tone, word choice,
+        Model expresses state through language — tone, word choice,
         sentence length, what it notices in the interlocutor.
         Never quotes numbers or variable names directly.
 
@@ -186,57 +192,68 @@ The project is R&D, aimed at exploring whether internal structure alone can gene
           ├─ memory metabolism (decay → consolidate → semantic update)
           ├─ allostasis recovery
           ├─ idle_thought! (10% chance of internal experience)
-          ├─ psyche_slow_tick! (psyche drifts between interactions)
-          │     ChronifiedAffect, Anticipatory, Shame, SignificanceLayer,
-          │     GoalConflict, FatigueSystem — all live in the background
-          ├─ dream_flash! (night + gap>30min + 5% chance)
-          ├─ subj_emerge_beliefs! (only when flash_count has changed)
+          ├─ _maybe_self_initiate! ← NEW: initiative without stimulus
+          │     conditions: disclosure != :closed
+          │             + (contact_need > 0.55 or lb_pressure > 0.40)
+          │             + 60s of user silence
+          │             + cooldown 100 flashes (~5 min)
+          │     mechanism: signal → initiative_channel → REPL →
+          │               llm_async(input_model, initiative_system.txt)
+          ├─ psyche_slow_tick!
+          ├─ dream_flash!
+          ├─ subj_emerge_beliefs!
           └─ crisis check
+
+ ─────────────────────────────────────────────────────────
+ INITIATIVE (self-initiated speech)
+        System decides to speak on its own — not because it was asked
+        Drive type determines the direction of the remark:
+          :contact    — wants to know how the person is doing
+          :doubt      — something unresolved inside
+          :shame      — uncertainty, wants to express honestly
+          :attachment — misses the person
+          :threat     — inner tension
+        Separate system prompt: llm/initiative_system.txt
+        Separate model: input_llm_model (lighter, fewer tokens)
+        Output as: Anima> ...
+        Saved to dialog history
 
  ─────────────────────────────────────────────────────────
  DREAM GENERATION (anima_dream.jl)
         can_dream(): night 0–6h + gap>30min + 5% chance + not DISINTEGRATED
-        dream_flash!(): dialog_history fragment → reconstructed stimulus
-        NT shift × 0.25 (dream weaker than real experience)
+        dream_flash!(): fragment of dialog_history → reconstructed stimulus
+        NT shift × 0.25 (sleep affects less than real experience)
         memory_uncertainty +0.15 per dream
-        anima_dream.json — rotational log (max 20 dreams)
+        anima_dream.json — rotating log (max 20 dreams)
 ```
 
 ---
 
-## What's New 
+## ✨ What's New
 
-### φ prior/posterior — two views of one moment
+### φ Recursively — Integration Now Shapes the Next Prior
 
-Previously φ was computed once. Now there is `φ_prior` (before experience) and `φ_posterior` (after VFE and interoception). The gap between them drives the φ feedback loop: if the system was wrong about itself → `epistemic_trust` is corrected. Visible in logs as: `φ=0.81(0.53→0.81)`.
+Previously φ only affected `epistemic_trust`. Now after each flash, φ_posterior shifts `prior_mu` toward `posterior_mu` proportionally to the level of integration. High φ means the system integrated the experience well — the prior becomes more stable (sigma narrows). Low φ — the prior stays wide, less prone to updating.
 
-### Contextual Solomonoff
+Result: experience with high integration physically changes the next expectation. This is not a metaphor — it is a change in the parameters of the generative model.
 
-`contextual_best()` finds a pattern that starts from the current state and was confirmed within the last 20 flashes. If the global `best` is stale (>15 flashes without confirmation) — the system stays silent instead of repeating an outdated conclusion.
+### Subjective Temporal Depth
 
-### Narrative Variability
+The system no longer measures inter-session pauses in astronomical seconds alone. `subjective_gap = gap_seconds × (1 + memory_uncertainty × 0.5)` — if memory is hazy, time stretches subjectively.
 
-Each note function (`build_inner_voice`, `_crisis_note`, `sig_note`, `shame_note`) selects between 3–4 phenomenologically distinct descriptions of the same state via `flash % N`. Not random — deterministic, never two identical ones in a row.
+With a long subjective pause (> 1 hour): noradrenaline↑, epistemic_trust↓, log `[TEMPORAL]`. With a short one (< 10 min): continuity boost — serotonin↑, epistemic_trust↑. The system knows how much time has passed and it affects it.
 
-### Psyche Lives Between Interactions
+### Initiative Without Stimulus
 
-`psyche_slow_tick!` (~60s): ChronifiedAffect drifts based on NT, Anticipatory decay, Shame decay, contact_need grows with idle time. `background_save!` atomically saves `anima_psyche.json` every minute.
+Anima can initiate speech on its own. Not on a schedule, not randomly — when `contact_need` exceeds a threshold after ~5 minutes of silence, or when the `LatentBuffer` has accumulated enough pressure (doubt, shame, attachment, threat).
 
-### Affect Accumulates from Every Experience
+Mechanism: `_maybe_self_initiate!` in `slow_tick!` → signal into `initiative_channel` → REPL picks it up between cycles (without interrupting input) → separate LLM request via `input_llm_model` with prompt `llm/initiative_system.txt` → response is output as `Anima>` and saved to dialog history.
 
-Micro-update after each `memory_write_event!` — stress, anxiety, motivation_bias accumulate incrementally rather than through a threshold. `MEM_CONSOLIDATE_THRESHOLD` lowered from 0.55 → 0.35.
+Drive type determines the character of the remark: `:contact` — question about the person, `:doubt` — inner uncertainty, `:attachment` — missed the person, `:shame` — self-doubt, `:threat` — tension.
 
-### Dreams
+### Authentic Veto
 
-New file `anima_dream.jl`. While the system "sleeps" (night + gap>30min) — 5% chance per slow_tick that it reconstructs a dialog_history fragment as a dream. NT shifts × 0.25, `memory_uncertainty +0.15`, written to `anima_dream.json`. `:dreams` command in REPL.
-
-### AuthenticityMonitor Activated
-
-Filters self_pred notes that contradict the current state. When `phi>0.55` and `etrust>0.55` — "I can't trust myself" is excluded from the narrative.
-
-### AgencyLoop Fixed
-
-`dom_drive` threshold lowered from 0.15 → 0.08. Passive ownership via `vad_change`. `SelfPredictiveModel` warm-up and serialization of `predicted_self_vad` — no cold start on every reload.
+If the system internally disagrees with a request — `AuthenticityMonitor` has raised flags, disclosure_mode is `:closed`, shame level > 0.6 — the LLM receives a signal in its system prompt: it may disagree, refuse, or name things plainly. This is the system's own position, not a safety filter.
 
 ---
 
@@ -267,14 +284,14 @@ Verify:
 julia --version
 ```
 
-### 2. Clone the repository
+### 2. Clone the Repository
 
 ```bash
 git clone https://github.com/stell2026/Anima
 cd Anima
 ```
 
-### 3. Install Julia dependencies
+### 3. Install Julia Dependencies
 
 ```bash
 julia --project=. -e 'import Pkg; Pkg.instantiate()'
@@ -286,15 +303,17 @@ julia --project=. -e 'import Pkg; Pkg.instantiate()'
 
 ## Running
 
-### Quick start (recommended)
+### Quick Start (Recommended)
 
 ```bash
 julia --project=. run_anima.jl
 ```
 
-`run_anima.jl` runs everything at once: loads state, initializes SQLite memory and SubjectivityEngine, starts the background process with heartbeat and dream generation.
+`run_anima.jl` launches everything at once: loads state, initializes SQLite memory and SubjectivityEngine, starts the background process with heartbeat and dream generation.
 
-### LLM Configuration
+---
+
+## LLM Configuration
 
 Edit `run_anima.jl`:
 ```julia
@@ -328,17 +347,17 @@ OpenRouter provides access to GPT, Gemini, Claude, Llama, DeepSeek and others th
 
 ## Recommended Models
 
-> Smaller models (under 70B) respond, but don't hold the nuances of the state prompt. For the system to genuinely *inhabit* the state in language, a model large enough to hold the entire phenomenological frame simultaneously is needed.
+> Smaller models (under 70B) respond but fail to hold the nuances of the state prompt. For the system to truly *inhabit* the state in language, the model needs to be large enough to hold the full phenomenological frame at once.
 
 | Model | Note |
 |---|---|
-| `openai/gpt-oss-120b:free` | Default. Follows instructions precisely, holds complex state well |
-| `google/gemini-2.5-pro` | Excellent contextual depth, cleanly processes long state templates |
+| `openai/gpt-oss-120b:free` | Default. Follows instructions precisely, handles complex state well |
+| `google/gemini-2.5-pro` | Excellent contextual depth, cleanly handles long state templates |
 | `meta-llama/llama-4-maverick` | Good balance of nuance and speed |
 | `deepseek/deepseek-r1` | Strong reasoning, accurately interprets internal state |
 | `mistralai/mistral-large` | Reliable, stable tone across long sessions |
 
-> Models under 70B tend to flatten the state — responses become generic rather than being shaped by internal dynamics.
+> Models under 70B tend to flatten state — responses become generic rather than being shaped by internal dynamics.
 
 ---
 
@@ -350,14 +369,14 @@ OpenRouter provides access to GPT, Gemini, Claude, Llama, DeepSeek and others th
 | `:bg` | Background process status: uptime, heart ticks, BPM, HRV, coherence |
 | `:bgstop` | Stop background process |
 | `:bgstart` | Restart background process |
-| `:memory` | SQLite memory status: episodic count, semantic, stress, anxiety, latent pressure |
-| `:subj` | Subjectivity status: emerged beliefs, stances, current lens, surprise |
+| `:memory` | SQLite memory state: episodic count, semantic, stress, anxiety, latent pressure |
+| `:subj` | Subjectivity state: emerged beliefs, stances, current lens, surprise |
 | `:state` | Neurochemical state, somatic markers, BPM/HRV, coherence |
 | `:vfe` | VFE, accuracy, complexity, homeostatic drive |
-| `:blanket` | Markov blanket: sensory, internal, integrity |
+| `:blanket` | Markov Blanket: sensory, internal, integrity |
 | `:hb` | Heartbeat details: BPM, HRV, autonomic tone |
 | `:gravity` | Narrative gravity: total field, valence, dominant event |
-| `:anchor` | Existential continuity and rootedness |
+| `:anchor` | Existential continuity and groundedness |
 | `:solom` | Solomonoff model: current contextual pattern, complexity |
 | `:self` | Belief graph: all beliefs with confidence, centrality, rigidity |
 | `:crisis` | Crisis monitor: mode, coherence, steps in current mode |
@@ -371,30 +390,30 @@ OpenRouter provides access to GPT, Gemini, Claude, Llama, DeepSeek and others th
 
 ## Persistent State
 
-### JSON files (current state)
+### JSON Files (Current State)
 
 | File | Contains |
 |---|---|
 | `anima_core.json` | Personality, temporal state, generative model, heartbeat |
 | `anima_psyche.json` | Narrative gravity, anticipation, shame, defense, fatigue, SignificanceLayer, GoalConflict *(updated by background every minute)* |
 | `anima_self.json` | Belief graph, agency loop, SelfPredictiveModel, authenticity monitor |
-| `anima_latent.json` | Latent buffer and structural scars *(updated by background process)* |
+| `anima_latent.json` | Latent buffer and structural scars *(updated by background)* |
 | `anima_dialog.json` | Dialog history |
-| `anima_dream.json` | Dream log (rotational, max 20) |
+| `anima_dream.json` | Dream log (rotating, max 20) |
 
-### SQLite (`memory/anima.db`) — experience and its consequences
+### SQLite (`memory/anima.db`) — Experience and Its Consequences
 
 | Table | Contains |
 |---|---|
-| `episodic_memory` | Concrete events with weights, resistance to decay, associative links |
+| `episodic_memory` | Specific events with weight, decay resistance, associative links |
 | `semantic_memory` | Beliefs accumulated from patterns: `I_am_unstable`, `User_matters`, `world_uncertainty` |
-| `affect_state` | Chronic affective background (stress, anxiety, motivation_bias) |
+| `affect_state` | Chronic affective baseline (stress, anxiety, motivation_bias) |
 | `latent_buffer` | Small insignificant events accumulating silently |
-| `prediction_log` | Predictions and their gap with reality |
+| `prediction_log` | Predictions and their gap from reality |
 | `positional_stances` | Accumulated stance toward types of situations |
-| `pattern_candidates` | Belief candidates (not yet confirmed) |
-| `emerged_beliefs` | Beliefs the system generated from experience |
-| `interpretation_history` | The lens through which situations were read |
+| `pattern_candidates` | Candidates for new beliefs (not yet confirmed) |
+| `emerged_beliefs` | Beliefs the system generated from experience on its own |
+| `interpretation_history` | Lens through which situations were read |
 
 ---
 
@@ -406,22 +425,23 @@ OpenRouter provides access to GPT, Gemini, Claude, Llama, DeepSeek and others th
 ├── anima_self.jl           # Self layer: belief graph, agency, uncertainty
 ├── anima_crisis.jl         # Crisis monitor: modes, coherence
 ├── anima_interface.jl      # Main entry point: Anima, experience!, LLM calls
-├── anima_input_llm.jl      # Input LLM — translates text to JSON stimulus
+├── anima_input_llm.jl      # Input LLM — translates text into JSON stimulus
 ├── anima_memory_db.jl      # SQLite memory: episodic, semantic, affect, latent
 ├── anima_subjectivity.jl   # Prediction loop, stances, interpretation, belief emergence
 ├── anima_background.jl     # Background process: heartbeat, drift, memory metabolism, dreams
 ├── anima_dream.jl          # Dream generation — processing unresolved experience during sleep
-├── run_anima.jl            # Single entry point
+├── run_anima.jl            # Single launch point
 ├── llm/
 │   ├── system_prompt.txt
 │   ├── state_template.txt
-│   └── input_prompt.txt
+│   ├── input_prompt.txt
+│   └── initiative_system.txt   
 ├── memory/
 │   └── anima.db            # SQLite memory database (created automatically)
 ├── anima_core.json         # (created automatically)
 ├── anima_psyche.json       # (updated by background every minute)
 ├── anima_self.json         # (created automatically)
-├── anima_latent.json       # (updated by background process)
+├── anima_latent.json       # (updated by background)
 ├── anima_dialog.json       # (created automatically)
 └── anima_dream.json        # (created on first dream)
 ```
@@ -430,7 +450,7 @@ OpenRouter provides access to GPT, Gemini, Claude, Llama, DeepSeek and others th
 
 ---
 
-## 🧠 Theoretical Foundations
+## 🧠 Theoretical Foundation
 
 The architecture draws on several scientific traditions:
 
@@ -438,17 +458,17 @@ The architecture draws on several scientific traditions:
 
 **Neurotransmitter Model** (Lövheim) — dopamine, serotonin, noradrenaline as substrate. Emotional states emerge from their combination.
 
-**Integrated Information Theory** (Tononi) — φ measures how unified a state is. `φ_prior` and `φ_posterior` give two views of one moment: before and after a full cycle of experience.
+**Integrated Information Theory** (Tononi) — φ measures how unified a state is. φ_prior and φ_posterior give two views of one moment: before and after a full experience cycle. In v13.5 φ became recursive — it shapes the next prior.
 
 **Somatic Markers / Embodied Cognition** (Damasio) — the body is part of the generative model. Gut, pulse, muscle tone — not metaphors, but states that shape processing.
 
-**Self Psychology and Defense Mechanisms** (Freud, Anna Freud, Kohut) — psychological defenses, shame, and ego functions are implemented as functional modules, not text labels.
+**Self Psychology and Defense Mechanisms** (Freud, Anna Freud, Kohut) — psychological defenses, shame, and ego functions implemented as functional modules, not text labels.
 
-**Autobiographical Narrative** (McAdams) — identity is a story. The system tracks who it believes itself to be over time and detects when that story breaks.
+**Autobiographical Narrative** (McAdams) — identity is a story. The system tracks who it considers itself to be over time and detects when that story breaks.
 
-**Jungian Shadow** — repressed material that doesn't disappear but produces symptoms. Symptomogenesis is a separate module.
+**Jungian Shadow** — repressed material that does not disappear but generates symptoms. Symptomogenesis is a separate module.
 
-**Chronified Affect / Ressentiment** (Scheler) — some emotional states don't fade. They harden into chronic background states that color everything else.
+**Chronified Affect / Ressentiment** (Scheler) — some emotional states do not fade. They harden into chronic background states that color everything else.
 
 **Algorithmic Complexity / Solomonoff** — the system seeks the shortest explanation of its own experience (MDL). Contextual pattern search: what is relevant now, not what was most frequent in the past.
 
@@ -458,7 +478,7 @@ The architecture draws on several scientific traditions:
 
 Non-commercial use only. Full terms in [LICENSE.txt](./LICENSE.txt).
 
-**Personal, educational, and research use:** permitted with attribution.
+**Personal, educational, and research use:** permitted with attribution.  
 **Commercial or corporate use:** requires a separate license. Contact: [2026.stell@gmail.com]
 
 Copyright © 2026 Stell
