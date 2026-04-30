@@ -231,7 +231,7 @@ This project is R&D, aimed at exploring whether internal structure alone can giv
 
 ## ✨ What's New
 
-### φ Recursively — Integration Now Shapes the Next Prior
+### Ф Recursively — Integration Now Shapes the Next Prior
 
 Previously φ only affected `epistemic_trust`. Now after each flash, φ_posterior shifts `prior_mu` toward `posterior_mu` proportionally to the level of integration. High φ means the system integrated the experience well — the prior becomes more stable (sigma narrows). Low φ — the prior stays wide, less prone to updating.
 
