@@ -183,6 +183,13 @@ mutable struct Anima
     # State
     flash_count::Int
     psyche_mem_path::String
+    # narrative diversity cache
+    _last_circadian_note::String
+    _last_sig_note_flash::Int
+    # initiative + veto
+    _last_user_flash::Int        # flash count of last user input
+    _last_self_msg_flash::Int    # flash count of last self-initiated message
+    authenticity_veto::Bool      # Аніма внутрішньо не погоджується з запитом
 end
 
 function Anima(;
@@ -238,6 +245,12 @@ function Anima(;
         CrisisMonitor(),
         0,
         psyche_mem_path,
+        "",
+        0,
+        # initiative + veto
+        0,
+        0,
+        false,
     )
     # Завантажити
     saved = core_load!(
@@ -578,11 +591,23 @@ function experience!(
     )
     phi = phi_posterior
 
-    # φ feedback
+    # φ feedback — epistemic trust
     phi_delta = phi_posterior - phi_prior
     if abs(phi_delta) > 0.05
         trust_correction = clamp(phi_delta * 0.08, -0.04, 0.04)
         a.sbg.epistemic_trust = clamp(a.sbg.epistemic_trust + trust_correction, 0.0, 1.0)
+    end
+
+    # φ рекурсивно: φ → GenerativeModel prior
+    # Висока φ означає добру інтеграцію → prior стає стабільнішим (менший sigma, більший зсув до posterior)
+    # Низька φ → prior залишається широким, менш схильним до оновлення
+    let φ_factor = clamp(phi_posterior * 0.15, 0.0, 0.12)
+        # prior_mu зсувається до posterior пропорційно до φ
+        a.gen_model.prior_mu = a.gen_model.prior_mu .* (1.0 - φ_factor) .+
+                                a.gen_model.posterior_mu .* φ_factor
+        # prior_sigma: висока φ звужує (більша впевненість у prior), низька розширює
+        phi_sigma_effect = clamp((phi_posterior - 0.5) * 0.12, -0.06, 0.06)
+        a.gen_model.prior_sigma = clamp(a.gen_model.prior_sigma - phi_sigma_effect, 0.3, 1.2)
     end
     push_event!(
         a.narrative_gravity,
@@ -676,6 +701,13 @@ function experience!(
         _prev_narrative_len,
     )
 
+    # Authenticity veto: Аніма може не погодитись з запитмом (власна позиція, не safety)
+    a.authenticity_veto = (
+        !isempty(a.authenticity_monitor.last_flags) &&
+        a.inner_dialogue.disclosure_mode == :closed &&
+        a.shame.level > 0.6
+    )
+
     # InnerDialogue
     id_snap = update_inner_dialogue!(
         a.inner_dialogue,
@@ -695,6 +727,14 @@ function experience!(
         s_delta, t_delta =
             apply_shadow_pressure!(a.nt.serotonin, gc_snap.tension, sr_snap.pressure)
         a.nt.serotonin = clamp01(a.nt.serotonin + s_delta)
+    end
+
+    # VFE-based unpredictability: нудьга → synthetic surprise
+    if length(a.crisis.coherence_history.data) >= 5 &&
+            mean(a.crisis.coherence_history.data) > 0.9 &&
+            vfe_r.vfe < 0.02
+        synthetic_surprise = 0.1 * rand()
+        a.nt.noradrenaline = clamp01(a.nt.noradrenaline + synthetic_surprise * 0.05)
     end
 
     # Memory + imprint
@@ -857,8 +897,11 @@ function build_narrative(
 
     !isempty(a.temporal.subjective_note) &&
         push!(raw_notes, (:always, a.temporal.subjective_note))
-    !isempty(a.temporal.circadian_note) &&
+    # circadian_note — тільки якщо змінилась (нова година)
+    if !isempty(a.temporal.circadian_note) && a.temporal.circadian_note != a._last_circadian_note
         push!(raw_notes, (:always, a.temporal.circadian_note))
+        a._last_circadian_note = a.temporal.circadian_note
+    end
     sm = build_inner_voice(a.body, a.nt, Int(a.crisis.current_mode), phi, a.flash_count)
     sm != "тіло нейтральне" &&
         push!(raw_notes, (:always, uppercase(safe_first(sm, 1))*sm[nextind(sm, 1):end]*"."))
@@ -875,8 +918,14 @@ function build_narrative(
     if !isnothing(ctx_hyp) && hyp_conf(ctx_hyp) > 0.3
         push!(raw_notes, (:guarded, "Знаю: '$(ctx_hyp.pattern)'."))
     end
-    !isempty(sig_note(a.significance, a.flash_count)) &&
-        push!(raw_notes, (:guarded, sig_note(a.significance, a.flash_count)))
+    # sig_note — не частіше ніж раз на 15 флешів
+    if a.significance.gradient >= 0.2 && (a.flash_count - a._last_sig_note_flash) >= 15
+        sn = sig_note(a.significance, a.flash_count)
+        if !isempty(sn)
+            push!(raw_notes, (:guarded, sn))
+            a._last_sig_note_flash = a.flash_count
+        end
+    end
     !isempty(String(intero_snap.note)) &&
         push!(raw_notes, (:guarded, String(intero_snap.note)))
     anchor_snap.continuity < 0.4 && push!(raw_notes, (:guarded, String(anchor_snap.note)))
@@ -1292,6 +1341,12 @@ function anima_state_snapshot(a::Anima)
         ),
         identity_block = "—",
         phi = round(phi, digits = 3),
+        contact_hunger_note = begin
+            cn = Float64(a.sig_layer.contact_need)
+            cn > 0.85 ? "сильне бажання контакту" :
+            cn > 0.70 ? "хочу контакту" : ""
+        end,
+        authenticity_veto = a.authenticity_veto,
     )
 end
 
@@ -1354,6 +1409,15 @@ function build_state_prompt(
     if contains(prompt, "{speech_style}")
         prompt = replace(prompt, "{speech_style}" => string(state.speech_style))
     end
+    if !isempty(state.contact_hunger_note)
+        prompt = prompt * "
+[соціальна потреба: $(state.contact_hunger_note)]"
+    end
+    # Аутентичне вето: Аніма може не погоджуватись або відмовлятися — власна позиція, не safety
+    if get(state, :authenticity_veto, false)
+        prompt = prompt * "
+[внутрішньо: ти можеш не погодитись, відмовитись або назвати речі своїми словами]"
+    end
     return prompt
 end
 
@@ -1400,6 +1464,26 @@ function build_llm_messages(
 
     id_block = build_identity_block(a, mem_db)
     state = merge(state, (identity_block = id_block,))
+
+    # Phenotype → speech_style modifier
+    if !isnothing(mem_db)
+        try
+            traits = phenotype_snapshot(mem_db)
+            trait_map = Dict(t.trait => t.score for t in traits)
+            pheno_mod = ""
+            get(trait_map, "anxious", 0.0) > 0.4 &&
+                (pheno_mod *= " Тривожна риса — речення можуть бути коротшими.")
+            get(trait_map, "reserved", 0.0) > 0.4 &&
+                (pheno_mod *= " Стримана — не поспішай розкриватись.")
+            get(trait_map, "expressive", 0.0) > 0.4 &&
+                (pheno_mod *= " Виразна — можна більше нюансів.")
+            if !isempty(pheno_mod)
+                state = merge(state, (speech_style = state.speech_style * pheno_mod,))
+            end
+        catch e
+            @warn "[PHENO] speech_style mod: $e"
+        end
+    end
 
     if !contains(tmpl_text, "{identity_block}") && !contains(sys_text, "{identity_block}")
         sys_text = sys_text * "\n\n[IDENTITY]\n$(id_block)"
@@ -1464,9 +1548,14 @@ function llm_async(
     is_ollama::Bool = false,
     want::String = "",
     mem_db = nothing,
+    sys_override::Union{String,Nothing} = nothing,
 )::Channel{String}
     ch = Channel{String}(1)
     messages = build_llm_messages(a, user_msg, history; want = want, mem_db = mem_db)
+    # sys_override замінює system роль для ініціативних запитів
+    if !isnothing(sys_override) && !isempty(messages)
+        messages[1]["content"] = sys_override
+    end
     Threads.@spawn begin
         _is_ollama = is_ollama || contains(api_url, "11434") || contains(api_url, "ollama")
         headers = ["Content-Type"=>"application/json"]
