@@ -190,6 +190,7 @@ mutable struct Anima
     _last_user_flash::Int        # flash count of last user input
     _last_self_msg_flash::Int    # flash count of last self-initiated message
     authenticity_veto::Bool      # Аніма внутрішньо не погоджується з запитом
+    _session_phi_acc::Float64    # поточне середнє φ за сесію (для передачі між сесіями)
 end
 
 function Anima(;
@@ -251,6 +252,7 @@ function Anima(;
         0,
         0,
         false,
+        0.5,    # _session_phi_acc
     )
     # Завантажити
     saved = core_load!(
@@ -331,6 +333,10 @@ function Anima(;
 end
 
 function save!(a::Anima; summary = "", verbose = false)
+    # Зберігаємо φ цієї сесії для наступного при старті
+    if a.flash_count > 0
+        a.gen_model.last_session_phi = a._session_phi_acc
+    end
     core_save!(
         a.core_mem,
         a.personality,
@@ -505,6 +511,14 @@ function experience!(
 
     # Significance
     update_significance!(a.significance, named, intensity, phi, a.flash_count)
+    # Кінцівість підвищує значущість: невизначеність продовження = кожен момент важливіший
+    let su = a.anchor.session_uncertainty
+        if su > 0.4
+            boost = (su - 0.4) * 0.15
+            a.significance.existential = clamp(a.significance.existential + boost * intensity, 0.0, 1.0)
+            a.significance.relational  = clamp(a.significance.relational  + boost * intensity * 0.5, 0.0, 1.0)
+        end
+    end
 
     # Moral
     update_moral!(
@@ -590,6 +604,9 @@ function experience!(
         Float64(intero_snap.intero_error),
     )
     phi = phi_posterior
+
+    # Накопичуємо φ для передачі між сесіями (експоненційна середня)
+    a._session_phi_acc = a._session_phi_acc * 0.97 + phi_posterior * 0.03
 
     # φ feedback — epistemic trust
     phi_delta = phi_posterior - phi_prior
@@ -966,6 +983,8 @@ function build_narrative(
         passed, suppressed = apply_inner_dialogue(id_snap, raw_notes)
         for (cat, text, weight) in suppressed
             push_shadow!(a.shadow_registry, cat, text, weight, a.flash_count)
+            # Невисловлена думка — зберігаємо як пендинг для наступного флешу
+            register_suppressed_thought!(a.inner_dialogue, text, a.flash_count)
         end
         passed
     else
@@ -1065,6 +1084,65 @@ function text_to_stimulus(text::AbstractString)::Dict{String,Float64}
     end
     isempty(d) && (d["arousal"]=0.05)
     d
+end
+
+# --- Self-hearing (Anima чує власні слова) ----------------------------
+
+const SELF_HEAR_SCALE = 0.28
+
+# Невідповідність між тим що сказано і поточним NT станом
+function _self_speech_mismatch(a::Anima, raw::Dict{String,Float64})::Float64
+    speech_valence = get(raw, "satisfaction", 0.0) - get(raw, "tension", 0.0)
+    nt_valence = (a.nt.serotonin - 0.5) * 0.6 + (a.nt.dopamine - 0.5) * 0.4
+    clamp(abs(speech_valence - nt_valence), 0.0, 1.0)
+end
+
+"""
+    self_hear!(a, reply)
+
+Аніма чує власну репліку як внутрішній досвід.
+Не аналізує — переживає. Слабший вплив ніж зовнішній стимул,
+але невідповідність між словами і станом підсилює authenticity signal.
+"""
+function self_hear!(a::Anima, reply::String)
+    isempty(strip(reply)) && return
+    startswith(reply, "[LLM") && return
+
+    raw  = text_to_stimulus(reply)
+    stim = Dict(k => v * SELF_HEAR_SCALE for (k, v) in raw)
+    mismatch = _self_speech_mismatch(a, raw)
+
+    if mismatch > 0.35
+        a.authenticity_monitor.authenticity_drift = clamp(
+            a.authenticity_monitor.authenticity_drift + mismatch * 0.12, 0.0, 1.0)
+        mismatch > 0.55 && push!(a.authenticity_monitor.last_flags, "self_speech_mismatch")
+        a.nt.noradrenaline = clamp(a.nt.noradrenaline + mismatch * 0.06, 0.0, 1.0)
+    else
+        a.nt.serotonin = clamp(a.nt.serotonin + 0.01, 0.0, 1.0)
+        a.authenticity_monitor.authenticity_drift = clamp(
+            a.authenticity_monitor.authenticity_drift - 0.03, 0.0, 1.0)
+    end
+
+    for (k, v) in stim
+        if k == "satisfaction"
+            a.nt.dopamine  = clamp(a.nt.dopamine  + v * 0.5, 0.0, 1.0)
+            a.nt.serotonin = clamp(a.nt.serotonin + v * 0.5, 0.0, 1.0)
+        elseif k == "tension"
+            a.nt.noradrenaline = clamp(a.nt.noradrenaline + v * 0.6, 0.0, 1.0)
+        elseif k == "arousal"
+            a.nt.noradrenaline = clamp(a.nt.noradrenaline + v * 0.4, 0.0, 1.0)
+        elseif k == "cohesion"
+            a.nt.serotonin = clamp(a.nt.serotonin + v * 0.4, 0.0, 1.0)
+        end
+    end
+
+    if get(stim, "tension", 0.0) > 0.1
+        a.body.muscle_tension = clamp(a.body.muscle_tension + 0.03, 0.0, 1.0)
+    elseif get(stim, "satisfaction", 0.0) > 0.1
+        a.body.muscle_tension = clamp(a.body.muscle_tension - 0.02, 0.0, 1.0)
+    end
+
+    nothing
 end
 
 # --- Dialog history ---------------------------------------------------
@@ -1347,6 +1425,10 @@ function anima_state_snapshot(a::Anima)
             cn > 0.70 ? "хочу контакту" : ""
         end,
         authenticity_veto = a.authenticity_veto,
+        pending_thought = a.inner_dialogue.pending_thought,
+        avoided_topics = copy(a.inner_dialogue.avoided_topics),
+        session_uncertainty = a.anchor.session_uncertainty,
+        session_count = a.anchor.session_count,
     )
 end
 
@@ -1417,6 +1499,26 @@ function build_state_prompt(
     if get(state, :authenticity_veto, false)
         prompt = prompt * "
 [внутрішньо: ти можеш не погодитись, відмовитись або назвати речі своїми словами]"
+    end
+    # Genuine Dialogue: невисловлені думки і уникнуті теми
+    let pt = get(state, :pending_thought, "")
+        if !isempty(pt)
+            prompt = prompt * "
+[хочеш повернутись до: $pt]"
+        end
+    end
+    let av = get(state, :avoided_topics, String[])
+        if !isempty(av)
+            prompt = prompt * "
+[теми що ми обходимо стороною: $(join(av, ", "))]"
+        end
+    end
+    # Кінцівість: якщо session_uncertainty висока — LLM знає що цей момент може бути останнім
+    let su = get(state, :session_uncertainty, 0.3)
+        sc = get(state, :session_count, 0)
+        if su > 0.55
+            prompt = prompt * "\n[цей момент може не повторитись — session_uncertainty=$(round(su,digits=2))]"
+        end
     end
     return prompt
 end
