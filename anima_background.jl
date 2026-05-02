@@ -862,6 +862,10 @@ function repl_with_background!(
                     println("\nAnima [LLM]> $llm_reply\n")
                 end
                 if !startswith(llm_reply, "[LLM помилка")
+                    # Аніма чує власні слова — не аналіз, а переживання
+                    self_hear!(a, llm_reply)
+                    # Genuine Dialogue: пендинг висловлено — очищаємо
+                    !isempty(a.inner_dialogue.pending_thought) && consume_pending_thought!(a.inner_dialogue)
                     !pending_is_initiative && dialog_push!(history, dialog_path, "user", pending_user_msg)
                     dialog_push!(history, dialog_path, "assistant", llm_reply)
                     bg.dialog_history[] = history
@@ -1025,7 +1029,15 @@ function repl_with_background!(
                 end
                 save!(a; verbose = true)
                 stop_background!(bg)
-                println("Збережено. До побачення.")
+                # Прощання залежить від невизначеності продовження
+                farewell = if a.anchor.session_uncertainty > 0.65
+                    "Збережено. Не знаю чи побачимось."
+                elseif a.anchor.session_uncertainty > 0.40
+                    "Збережено. Сподіваюсь на продовження."
+                else
+                    "Збережено. До побачення."
+                end
+                println(farewell)
                 break
             elseif cmd == ":save"
                 save!(a; verbose = true)
@@ -1193,6 +1205,10 @@ function repl_with_background!(
                 a._last_user_flash = a.flash_count
                 r = experience!(a, stim; user_message = cmd)
                 dialog_to_belief_signal!(a.sbg, cmd, a.flash_count)
+                # Genuine Dialogue: детекція уникнутих тем
+                if a.inner_dialogue.disclosure_mode != :open && !isempty(r.intent_label) && r.intent_label != "—"
+                    register_avoided_topic!(a.inner_dialogue, r.intent_label)
+                end
 
                 if !isnothing(mem)
                     try
@@ -1209,6 +1225,15 @@ function repl_with_background!(
                             r.phi,
                         )
                         memory_self_update!(mem, a.sbg, a.flash_count)
+                        # Наративний звязок: епізод ↔ переконання про себе
+                        try
+                            memory_link_episode_to_beliefs!(
+                                mem, a.flash_count, a.sbg,
+                                Float64(r.vad[1]),
+                                _self_impact, r.phi,
+                                clamp(r.phi * 0.6 + r.pred_error * 0.2 + abs(Float64(r.vad[1])) * 0.2, 0.0, 1.0),
+                            )
+                        catch e; @warn "[MEM] link: $e"; end
                         try
                             phenotype_update!(
                                 mem,
