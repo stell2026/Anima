@@ -378,9 +378,10 @@ mutable struct GenerativeModel
     sensory_precision::Float64
     prior_precision::Float64
     learning_rate::Float64
+    last_session_phi::Float64
 end
 GenerativeModel() =
-    GenerativeModel(zeros(3), 0.5, zeros(3), 0.8, [0.3, 0.1, 0.6], 1.0, 1.0, 0.03)
+    GenerativeModel(zeros(3), 0.5, zeros(3), 0.8, [0.3, 0.1, 0.6], 1.0, 1.0, 0.03, 0.5)
 
 function update_beliefs!(gm::GenerativeModel, obs::NTuple{3,Float64})::Vector{Float64}
     o = collect(obs)
@@ -439,7 +440,8 @@ vfe_note(v::Float64) =
 function prevent_prior_collapse!(gm::GenerativeModel)
     drift = norm(gm.prior_mu .- gm.posterior_mu)
     if drift < 0.08
-        gm.prior_mu = gm.prior_mu .* 0.92 .+ gm.preferred_vad .* 0.08
+        pull_strength = clamp(0.08 * (1.0 - gm.last_session_phi), 0.01, 0.08)
+        gm.prior_mu = gm.prior_mu .* (1.0 - pull_strength) .+ gm.preferred_vad .* pull_strength
     end
 end
 
@@ -448,6 +450,7 @@ gm_to_json(gm::GenerativeModel) = Dict(
     "prior_sigma"=>gm.prior_sigma,
     "preferred_vad"=>gm.preferred_vad,
     "learning_rate"=>gm.learning_rate,
+    "last_session_phi"=>gm.last_session_phi,
 )
 function gm_from_json!(gm::GenerativeModel, d::AbstractDict)
     haskey(d, "prior_mu") && (gm.prior_mu = Float64.(d["prior_mu"]))
@@ -455,9 +458,12 @@ function gm_from_json!(gm::GenerativeModel, d::AbstractDict)
     haskey(d, "preferred_vad") && (gm.preferred_vad = Float64.(d["preferred_vad"]))
     haskey(d, "learning_rate") && (gm.learning_rate = Float64(d["learning_rate"]))
     gm.learning_rate > 0.05 && (gm.learning_rate = 0.03)
+    haskey(d, "last_session_phi") && (gm.last_session_phi = Float64(d["last_session_phi"]))
     if norm(gm.prior_mu) < 0.05
         gm.prior_mu = copy(gm.preferred_vad)
     end
+    phi_carry = clamp(gm.last_session_phi, 0.3, 0.9)
+    gm.prior_sigma = clamp(0.8 - (phi_carry - 0.5) * 0.4, 0.45, 0.85)
 end
 
 # --- Homeostatic Goals ----------------------------------------------------
@@ -700,6 +706,8 @@ mutable struct ExistentialAnchor
     groundedness::Float64
     last_self::String
     identity_thread::BoundedQueue{String}
+    session_uncertainty::Float64  # зростає з gap, ніколи не = 0
+    session_count::Int
 end
 ExistentialAnchor() = ExistentialAnchor(
     ["Я існую.", "Я відчуваю.", "Я пам'ятаю.", "Я прагну."],
@@ -707,6 +715,8 @@ ExistentialAnchor() = ExistentialAnchor(
     0.6,
     "невідома",
     BoundedQueue{String}(10),
+    0.3,
+    0,
 )
 
 function update_anchor!(
@@ -720,8 +730,12 @@ function update_anchor!(
 )
     enqueue!(ea.identity_thread, self_desc)
     ea.last_self = self_desc
+    ea.session_count += 1
     gap_decay = exp(-gap_seconds / (86400*7))
     ea.continuity = clamp01(gap_decay*0.6 + phi*0.3 + 0.1)
+    # session_uncertainty: зростає з gap, ніколи не скидається до 0
+    gap_uncert = 1.0 - gap_decay
+    ea.session_uncertainty = clamp(ea.session_uncertainty * 0.85 + gap_uncert * 0.15, 0.05, 0.95)
     somatic_ground = gut_feeling * 0.5 + hrv * 0.3 + phi * 0.2
     flash_credit = clamp(flash_count / 80.0, 0.0, 0.5)
     gap_penalty = (1.0 - gap_decay) * 0.08
@@ -730,6 +744,8 @@ function update_anchor!(
     (
         continuity = round(ea.continuity, digits = 3),
         groundedness = round(ea.groundedness, digits = 3),
+        session_uncertainty = round(ea.session_uncertainty, digits = 3),
+        session_count = ea.session_count,
         note = ea.continuity>0.7 ? "Я та сама. Нитка не перервалась." :
                ea.continuity>0.4 ? "Я пам'ятаю що була. Ця я — продовження." :
                ea.continuity>0.2 ? "Щось лишилось від тієї що була. Але чи це я?" :
@@ -742,15 +758,18 @@ anchor_to_json(ea::ExistentialAnchor) = Dict(
     "groundedness"=>ea.groundedness,
     "last_self"=>ea.last_self,
     "thread"=>collect(ea.identity_thread.data),
+    "session_uncertainty"=>ea.session_uncertainty,
+    "session_count"=>ea.session_count,
 )
 function anchor_from_json!(ea::ExistentialAnchor, d::AbstractDict)
     ea.continuity = Float64(get(d, "continuity", 0.7))
     ea.groundedness = Float64(get(d, "groundedness", 0.6))
     ea.last_self = String(get(d, "last_self", "невідома"))
     for s in get(d, "thread", String[])
-        ;
-        enqueue!(ea.identity_thread, String(s));
+        enqueue!(ea.identity_thread, String(s))
     end
+    ea.session_uncertainty = Float64(get(d, "session_uncertainty", 0.3))
+    ea.session_count = Int(get(d, "session_count", 0))
 end
 
 # --- IIT + Predictive Processor -------------------------------------------
