@@ -42,6 +42,7 @@ const EPISODIC_VEC_FIELDS =
     [:arousal, :valence, :tension, :phi, :prediction_error, :self_impact]
 const SIMILAR_STATE_THR = 0.88
 const SIMILAR_STATE_TOP_N = 3
+const MEM_ASSOC_LINK_SCALE = 0.6   # relevance пов'язаного = original * link_strength * scale
 
 _fdb(x, d::Float64 = 0.0) = (ismissing(x) || isnothing(x)) ? d : Float64(x)
 
@@ -692,13 +693,15 @@ LIMIT ?
 
         evidence_factor = clamp(sqrt(n / 10.0), 0.3, 2.0)
 
-        instability_signal = (avg_arousal * 0.4 + avg_pe * 0.4 + (avg_tension - 0.5) * 0.2)
+        # φ — противага нестабільності: висока інтеграція знижує сигнал тривоги
+        phi_stabilizer = clamp(avg_phi * 0.7, 0.0, 0.6)
+        instability_signal = (avg_arousal * 0.35 + avg_pe * 0.35 + (avg_tension - 0.5) * 0.15) - phi_stabilizer * 0.5
         instability_signal = clamp(instability_signal, 0.0, 1.0)
-        if instability_signal > 0.3
+        if instability_signal > 0.2
             _upsert_semantic!(
                 mem.db,
                 "I_am_unstable",
-                instability_signal * 0.008 * evidence_factor,
+                instability_signal * 0.003 * evidence_factor,
                 0.0,
                 1.0,
                 "consolidated",
@@ -709,7 +712,7 @@ LIMIT ?
             _upsert_semantic!(
                 mem.db,
                 "User_matters",
-                avg_impact * 0.006 * evidence_factor,
+                avg_impact * 0.002 * evidence_factor,
                 0.0,
                 1.0,
                 "consolidated",
@@ -805,7 +808,9 @@ VALUES (0, ?, 'LatentBurst', ?, ?, ?, ?, ?, 0.0, ?, 0.55, ?)
             """
 UPDATE semantic_memory
 SET value = value * CASE
-    WHEN key IN ('I_am_unstable', 'world_uncertainty') THEN 0.9985
+    WHEN key = 'I_am_unstable'   THEN 0.994
+    WHEN key = 'world_uncertainty' THEN 0.997
+    WHEN key = 'User_matters'    THEN 0.996
     ELSE 0.9995
 END
 WHERE value > 0.01
@@ -1332,9 +1337,78 @@ function recall_similar_states(
     isempty(scored) && return NamedTuple[]
     sort!(scored, by = x->x[1], rev = true)
 
+    # Асоціативне розширення: для кожного прямого попадання тягнемо пов'язані через memory_links
+    # Глибина = 1, relevance пов'язаного = original_relevance * link_strength * MEM_ASSOC_LINK_SCALE
+    direct_ids = Set{Int}()
+    for (_, _, r) in scored
+        # episodic_memory.id не повертається в SELECT — шукаємо за flash
+        id_rows = Tables.rowtable(DBInterface.execute(mem.db,
+            "SELECT id FROM episodic_memory WHERE flash = ? ORDER BY weight DESC LIMIT 1",
+            (Int(r.flash),)))
+        for ir in id_rows
+            push!(direct_ids, Int(ir.id))
+        end
+    end
+
+    assoc_scored = Tuple{Float64,Float64,Any}[]
+    seen_flashes = Set{Int}(Int(r.flash) for (_, _, r) in scored)
+
+    for eid in direct_ids
+        link_rows = Tables.rowtable(DBInterface.execute(mem.db,
+            """
+SELECT ml.strength,
+       CASE WHEN ml.id_a = ? THEN ml.id_b ELSE ml.id_a END as other_id
+FROM memory_links ml
+WHERE (ml.id_a = ? OR ml.id_b = ?) AND ml.strength > 0.5
+ORDER BY ml.strength DESC
+LIMIT 5
+""",
+            (eid, eid, eid)))
+
+        # пов'язані, яких ще немає в прямих результатах
+        orig_rel = 0.0
+        for (r_rel, _, r) in scored
+            id_rows2 = Tables.rowtable(DBInterface.execute(mem.db,
+                "SELECT id FROM episodic_memory WHERE flash = ? ORDER BY weight DESC LIMIT 1",
+                (Int(r.flash),)))
+            for ir2 in id_rows2
+                if Int(ir2.id) == eid
+                    orig_rel = r_rel
+                    break
+                end
+            end
+            orig_rel > 0.0 && break
+        end
+        orig_rel == 0.0 && continue
+
+        for lr in link_rows
+            other_id = Int(lr.other_id)
+            other_id in direct_ids && continue
+
+            other_rows = Tables.rowtable(DBInterface.execute(mem.db,
+                """
+SELECT flash, emotion, weight, phi, valence, arousal, tension, prediction_error, self_impact
+FROM episodic_memory WHERE id = ? AND flash != ? AND weight > 0.25
+""",
+                (other_id, exclude_flash)))
+
+            for or_ in other_rows
+                Int(or_.flash) in seen_flashes && continue
+                assoc_rel = orig_rel * _fdb(lr.strength) * MEM_ASSOC_LINK_SCALE
+                push!(assoc_scored, (assoc_rel, _fdb(lr.strength), or_))
+                push!(seen_flashes, Int(or_.flash))
+            end
+        end
+    end
+
+    # Об'єднуємо: спочатку прямі, потім асоціативні (якщо є місце)
+    direct_flashes = Set{Int}(Int(r.flash) for (_, _, r) in scored)
+    all_scored = vcat(scored, assoc_scored)
+    sort!(all_scored, by = x->x[1], rev = true)
+
     seen = Set{String}()
     result = NamedTuple[]
-    for (rel, sim, r) in scored
+    for (rel, sim, r) in all_scored
         em = String(r.emotion)
         em ∈ seen && continue
         push!(seen, em)
@@ -1352,6 +1426,7 @@ function recall_similar_states(
                 valence = _fdb(r.valence),
                 similarity = sim,
                 self_beliefs = self_beliefs,
+                via_association = !(Int(r.flash) in direct_flashes),
             ),
         )
         length(result) >= top_n && break
@@ -1364,13 +1439,14 @@ function similar_states_to_block(similar::Vector{NamedTuple})::String
     lines = String[]
     for s in similar
         tone = s.valence > 0.2 ? "тепло" : s.valence < -0.2 ? "холодно" : "нейтрально"
+        assoc_marker = get(s, :via_association, false) ? " ~" : ""
         belief_note = if haskey(s, :self_beliefs) && !isempty(s.self_beliefs)
             parts = [b.dir == "confirm" ? "$(b.name)↑" : b.dir == "challenge" ? "$(b.name)↓" : b.name for b in s.self_beliefs]
             " | я: " * join(parts, ", ")
         else
             ""
         end
-        push!(lines, "[$(s.emotion), phi=$(round(s.phi,digits=2)), $tone$belief_note]")
+        push!(lines, "[$(s.emotion), phi=$(round(s.phi,digits=2)), $tone$assoc_marker$belief_note]")
     end
     "відлуння: " * join(lines, " / ")
 end
