@@ -1265,6 +1265,7 @@ function update_intent!(
     emotion::String,
     id_stability::Float64,
     vs::ValueSystem,
+    agency_ownership::Float64 = 0.55,  # causal_ownership з AgencyLoop
 )
     !isnothing(ie.current)&&decay_intent!(ie.current)
     if !isnothing(dom_drive)&&haskey(DRIVE_GOALS, dom_drive)
@@ -1273,6 +1274,23 @@ function update_intent!(
         vetoed, alt=veto(vs, goal, emotion);
         vetoed&&(goal=alt)
         origin=vetoed ? "values" : "drive"
+
+        # AgencyLoop → вибір intent: низький causal_ownership зміщує до пасивних цілей
+        # При agency < 0.40: заміна активних цілей на спостереження/очікування
+        # При agency < 0.30: повне відступлення — "спостерігати", "дочекатись"
+        if agency_ownership < 0.30
+            passive_goals = ("спостерігати", "дочекатись", "побути з цим")
+            goal = passive_goals[abs(hash(emotion * dom_drive)) % length(passive_goals) + 1]
+            origin = "agency_low"
+        elseif agency_ownership < 0.40
+            # м'яке зміщення: якщо goal активний — замінюємо на менш ініціативний варіант
+            active_markers = ("ініціювати", "змінити", "дослідити", "знайти стимул")
+            if any(m -> contains(goal, m), active_markers)
+                goal = "зрозуміти що відбувається"
+                origin = "agency_low"
+            end
+        end
+
         if isnothing(ie.current)||ie.current.strength<0.3||ie.current.goal!=goal
             ie.current=Intent(goal, 0.6+id_stability*0.3, origin);
             enqueue!(ie.history, goal)
