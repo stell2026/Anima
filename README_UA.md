@@ -334,7 +334,7 @@ julia --version
 ### 2. Клонувати репозиторій
 
 ```bash
-git clone https://github.com/stell2026/Anima
+git clone https://github.com/stell2026/Anima.git
 cd Anima/Anima
 julia run_anima.jl
 ```
