@@ -335,7 +335,8 @@ julia --version
 
 ```bash
 git clone https://github.com/stell2026/Anima
-cd Anima
+cd Anima/Anima
+julia run_anima.jl
 ```
 
 ### 3. Встановити Julia-залежності
