@@ -112,7 +112,7 @@ Recent updates, in brief:
 
 ## 🔬 Detailed architecture
 
-```mermaid
+```
  L0 ─── Input LLM (isolated) ──────────────────────────────────────
         Receives: user text only
         Returns: JSON { tension, arousal, satisfaction,
@@ -245,7 +245,7 @@ Recent updates, in brief:
 
 ## Background Process
 
-```
+```mermaid
  BACKGROUND (between interactions)
         tick_heartbeat!       — heart beats continuously
         spontaneous_drift!    — spontaneous NT noise
