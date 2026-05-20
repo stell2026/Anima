@@ -365,6 +365,7 @@ self_hear! converts the system's own reply into internal experience. _self_speec
 ### Finitude as a Source of Significance
 
 session_uncertainty in ExistentialAnchor — real uncertainty about continuation, never resets to zero. Above 0.55, the LLM sees [this moment may not repeat].
+
 ---
 
 ## Initiative — four paths
