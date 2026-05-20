@@ -27,7 +27,7 @@ Unlike typical AI systems:
 
 ---
 
-## 🧠 How it works (simplified)
+## 🧩 How it works (simplified)
 
 **Input → Internal State → Conflict → Decision → Output**
 
@@ -59,7 +59,7 @@ This is an attempt to build a system where behavior emerges from internal state,
 
 ---
 
-## 🧠 Note
+## 💡 Note
 
 The project is R&D and explores whether internal structure alone can give rise to something resembling subjectivity. Not simulated psychology — computational subjectivity.
 
@@ -113,231 +113,231 @@ Recent updates, in brief:
 ## 🔬 Detailed architecture
 
 ```
- L0 ─── Input LLM (isolated) ──────────────────────────────────────
-        Receives: user text only
-        Returns: JSON { tension, arousal, satisfaction,
-                        cohesion, valence, subtext, want, confidence }
-        No access to Anima's state, dialog history, or output LLM
-        Prompt: llm/input_prompt.txt
-        Fallback: text_to_stimulus if unavailable or confidence < 0.60
-        │
-        ▼
-  STIMULUS enters the simulation
-  (+ memory_stimulus_bias + subj_predict! + subj_interpret!)
-        │
-        ▼
- L1 ─── Neurochemical substrate ────────────────────────────────────
-        NeurotransmitterState: dopamine / serotonin / noradrenaline
-        Leuchheim cube → primary emotional label
-        EmbodiedState: heart rate, muscle tone, gut, breathing
-        HeartbeatCore: HR, HRV, autonomic tone
-        memory_nt_baseline! ← chronic affect from SQLite
-        │
-        ▼
- L2 ─── Generative model ───────────────────────────────────────────
-        GenerativeModel: Bayesian beliefs with precision weights
-          → prior_mu / posterior_mu split with feedback loop
-          → prior_sigma narrows from φ_posterior (recursive)
-        MarkovBlanket: self/non-self boundary integrity
-        HomeostaticGoals: drives as pressure, not rules
-        AttentionNarrowing: attention narrowing under stress
-        InteroceptiveInference: body prediction error, allostatic load
-        TemporalOrientation: circadian modulation, inter-session gap
-          → subjective_gap = gap_seconds × (1 + memory_uncertainty × 0.5)
-          → long pause: noradrenaline↑, epistemic_trust↓
-          → short pause: continuity boost (serotonin↑, epistemic_trust↑)
-          → gap >= 3h: curiosity objects ripen (+0.015 intensity/h),
-                       resistance accumulates if > 0.05
-        ExistentialAnchor
-          → session_uncertainty: grows with gap, never = 0
-          → at > 0.4: existential and relational significance↑
-        │
-        ▼
- L3 ─── Metrics and Free Energy ────────────────────────────────────
-        φ (prior and posterior) — IIT-inspired integration
-        FreeEnergyEngine: VFE = accuracy + complexity
-        PolicySelector: action vs perception drive
-        PredictiveProcessor: prediction error, spike detection
-        │
-        ▼
- L4 ─── Psychic layer ──────────────────────────────────────────────
-        NarrativeGravity: significant events pull the current state
-        IntrinsicSignificance: internal weight independent of external
-        SignificanceLayer: 6 needs:
-          self_preservation / coherence / contact /
-          truth / autonomy / novelty_need + ticks_since_novelty
-          → novelty_need > 0.65: serotonin↓, dopamine↓ (cognitive hunger)
-          → novelty_need > 0.80 + 8+ ticks: endogenous initiative
-        ShameModule + EgoDefenses: rationalization, repression, minimization
-        ShadowRegistry: repressed material → Symptomogenesis
-        GoalConflict: active conflict between needs
-        LatentBuffer: doubt / shame / attachment / threat / resistance
-          → resistance: unresolved conflict with a belief
-          → at resistance > 0.55: initiative to return to the topic
-        InnerDialogue: :open / :guarded / :closed
-          → disclosure_threshold influenced by shame and contact_need
-        CuriosityRegistry: endogenous objects from self-prediction error
-          → update_curiosity! called each flash (pe = self_pred_error)
-          → pe threshold: 0.12
-          → objects ripen between sessions (gap >= 3h: intensity +0.015/h)
-          → top object feeds :curiosity_driven initiative
-        AuthenticityMonitor: gap between words and state
-        IntentEngine: action goal with decay and cooldown
-          → drive_history (8 elements): satiation after 4 repeats
-          → serialized between sessions
-        │
-        ▼
- L5 ─── Self model ─────────────────────────────────────────────────
-        SelfBeliefGraph: belief graph with confidence / centrality / rigidity
-          → default beliefs: "я існую", "я маю межу", "я можу впливати",
-                             "я безпечна", "я не самотня"
-        SelfPredictiveModel: self-state prediction
-          → self_pred_error: how much Anima surprised herself
-        AgencyLoop: causal_ownership updated every flash
-          → evaluate_agency!: compares intent with outcome
-          → agency < 0.30: passive intents (observe, wait)
-          → agency > 0.65: active intents (hold boundary, repeat success)
-          → identity_threat: accumulated pressure on identity
-          → epistemic_self_confidence: uncertainty about own state
-        detect_belief_conflict: detects pressure on beliefs (centrality > 0.7)
-          → signal_strength → D-vector activation
-          → threshold: 0.35
-        detect_silent_disagreement: own position without attack
-          → activates only under contextual pressure (0.05 < signal < 0.35)
-          → requires agency > 0.4, disclosure != :closed
-          → content: strongest belief (centrality > 0.5, confidence > 0.4)
-          → injected into prompt: [ВЛАСНА ПОЗИЦІЯ: "..."]
-        InterSessionConflict
-        │
-        ▼
- L6 ─── Crisis monitor ─────────────────────────────────────────────
-        CrisisMonitor: coherence = minimum() across components
-        Three modes: INTEGRATED / FRAGMENTED / DISINTEGRATED
-        CrisisParams structurally alter the processing topology
-        TRUTH-GUARD: dynamic prohibitions injected into LLM prompt:
-          → N > 0.6 || hrv < 0.1: forbid "I'm fine / calm"
-          → epistemic_self_confidence < 0.35: forbid certain claims about experience
-          → crisis DISINTEGRATED: forbid coherent statements
-          → coherence < 0.50 + FRAGMENTED: forbid "nothing troubles me"
-        │
-        ▼
- L7 ─── Narrative Self ──────────────────────────────────────────────
-        NarrativeSnapshot: core / trajectory / character / relation / tension
-        Built deterministically: beliefs + episodic + personality_traits +
-        semantic_memory — without LLM
-        Trigger: min. 50 flashes + change in φ / stability / beliefs (> 0.07)
-        narrative_history (SQLite) — identity chronology
-        anima_narrative.json — current state for LLM identity_block
-        │
-        ▼
- L8 ─── Output LLM ──────────────────────────────────────────────────
-        Receives: identity_block (beliefs + narrative + personality),
-                  inner_voice, state_template, dialog history,
-                  memory echoes, [D-VECTOR] or [INITIATIVE] or
-                  [ВЛАСНА ПОЗИЦІЯ] when relevant
-        Generates: text as expression of state, not its source
-        Banned phrases enforced in prompts:
-          "warm light", "central point", "streams toward you",
-          "тихо резонують", "центральна точка", "твоя присутність розширює"
+L0 ─── Input LLM (isolated)
+       Receives: user text only
+       Returns: JSON { tension, arousal, satisfaction,
+                       cohesion, valence, subtext, want, confidence }
+       No access to Anima's state, dialog history, or output LLM
+       Prompt: llm/input_prompt.txt
+       Fallback: text_to_stimulus if unavailable or confidence < 0.60
+       │
+       ▼
+ STIMULUS enters the simulation
+ (+ memory_stimulus_bias + subj_predict! + subj_interpret!)
+       │
+       ▼
+L1 ─── Neurochemical substrate
+       NeurotransmitterState: dopamine / serotonin / noradrenaline
+       Leuchheim cube → primary emotional label
+       EmbodiedState: heart rate, muscle tone, gut, breathing
+       HeartbeatCore: HR, HRV, autonomic tone
+       memory_nt_baseline! ← chronic affect from SQLite
+       │
+       ▼
+L2 ─── Generative model
+       GenerativeModel: Bayesian beliefs with precision weights
+         → prior_mu / posterior_mu split with feedback loop
+         → prior_sigma narrows from φ_posterior (recursive)
+       MarkovBlanket: self/non-self boundary integrity
+       HomeostaticGoals: drives as pressure, not rules
+       AttentionNarrowing: attention narrowing under stress
+       InteroceptiveInference: body prediction error, allostatic load
+       TemporalOrientation: circadian modulation, inter-session gap
+         → subjective_gap = gap_seconds × (1 + memory_uncertainty × 0.5)
+         → long pause: noradrenaline↑, epistemic_trust↓
+         → short pause: continuity boost (serotonin↑, epistemic_trust↑)
+         → gap >= 3h: curiosity objects ripen (+0.015 intensity/h),
+                      resistance accumulates if > 0.05
+       ExistentialAnchor
+         → session_uncertainty: grows with gap, never = 0
+         → at > 0.4: existential and relational significance↑
+       │
+       ▼
+L3 ─── Metrics and Free Energy
+       φ (prior and posterior) — IIT-inspired integration
+       FreeEnergyEngine: VFE = accuracy + complexity
+       PolicySelector: action vs perception drive
+       PredictiveProcessor: prediction error, spike detection
+       │
+       ▼
+L4 ─── Psychic layer
+       NarrativeGravity: significant events pull the current state
+       IntrinsicSignificance: internal weight independent of external
+       SignificanceLayer: 6 needs:
+         self_preservation / coherence / contact /
+         truth / autonomy / novelty_need + ticks_since_novelty
+         → novelty_need > 0.65: serotonin↓, dopamine↓ (cognitive hunger)
+         → novelty_need > 0.80 + 8+ ticks: endogenous initiative
+       ShameModule + EgoDefenses: rationalization, repression, minimization
+       ShadowRegistry: repressed material → Symptomogenesis
+       GoalConflict: active conflict between needs
+       LatentBuffer: doubt / shame / attachment / threat / resistance
+         → resistance: unresolved conflict with a belief
+         → at resistance > 0.55: initiative to return to the topic
+       InnerDialogue: :open / :guarded / :closed
+         → disclosure_threshold influenced by shame and contact_need
+       CuriosityRegistry: endogenous objects from self-prediction error
+         → update_curiosity! called each flash (pe = self_pred_error)
+         → pe threshold: 0.12
+         → objects ripen between sessions (gap >= 3h: intensity +0.015/h)
+         → top object feeds :curiosity_driven initiative
+       AuthenticityMonitor: gap between words and state
+       IntentEngine: action goal with decay and cooldown
+         → drive_history (8 elements): satiation after 4 repeats
+         → serialized between sessions
+       │
+       ▼
+L5 ─── Self model
+       SelfBeliefGraph: belief graph with confidence / centrality / rigidity
+         → default beliefs: "я існую", "я маю межу", "я можу впливати",
+                            "я безпечна", "я не самотня"
+       SelfPredictiveModel: self-state prediction
+         → self_pred_error: how much Anima surprised herself
+       AgencyLoop: causal_ownership updated every flash
+         → evaluate_agency!: compares intent with outcome
+         → agency < 0.30: passive intents (observe, wait)
+         → agency > 0.65: active intents (hold boundary, repeat success)
+         → identity_threat: accumulated pressure on identity
+         → epistemic_self_confidence: uncertainty about own state
+       detect_belief_conflict: detects pressure on beliefs (centrality > 0.7)
+         → signal_strength → D-vector activation
+         → threshold: 0.35
+       detect_silent_disagreement: own position without attack
+         → activates only under contextual pressure (0.05 < signal < 0.35)
+         → requires agency > 0.4, disclosure != :closed
+         → content: strongest belief (centrality > 0.5, confidence > 0.4)
+         → injected into prompt: [ВЛАСНА ПОЗИЦІЯ: "..."]
+       InterSessionConflict
+       │
+       ▼
+L6 ─── Crisis monitor
+       CrisisMonitor: coherence = minimum() across components
+       Three modes: INTEGRATED / FRAGMENTED / DISINTEGRATED
+       CrisisParams structurally alter the processing topology
+       TRUTH-GUARD: dynamic prohibitions injected into LLM prompt:
+         → N > 0.6 || hrv < 0.1: forbid "I'm fine / calm"
+         → epistemic_self_confidence < 0.35: forbid certain claims about experience
+         → crisis DISINTEGRATED: forbid coherent statements
+         → coherence < 0.50 + FRAGMENTED: forbid "nothing troubles me"
+       │
+       ▼
+L7 ─── Narrative Self
+       NarrativeSnapshot: core / trajectory / character / relation / tension
+       Built deterministically: beliefs + episodic + personality_traits +
+       semantic_memory — without LLM
+       Trigger: min. 50 flashes + change in φ / stability / beliefs (> 0.07)
+       narrative_history (SQLite) — identity chronology
+       anima_narrative.json — current state for LLM identity_block
+       │
+       ▼
+L8 ─── Output LLM
+       Receives: identity_block (beliefs + narrative + personality),
+                 inner_voice, state_template, dialog history,
+                 memory echoes, [D-VECTOR] or [INITIATIVE] or
+                 [ВЛАСНА ПОЗИЦІЯ] when relevant
+       Generates: text as expression of state, not its source
+       Banned phrases enforced in prompts:
+         "warm light", "central point", "streams toward you",
+         "тихо резонують", "центральна точка", "твоя присутність розширює"
 ```
 
 ---
 
-## Background Process
+## 🔄 Background Process
 
 ```
- BACKGROUND (between interactions)
-        tick_heartbeat!       — heart beats continuously
-        spontaneous_drift!    — spontaneous NT noise
-        slow_tick! (~60s):
-          ├─ circadian NT drift
-          ├─ belief decay
-          ├─ memory metabolism (decay → consolidate → semantic update)
-          │     consolidate_emerged_beliefs! every 30 flashes:
-          │     groups by belief_type → tendency_* in semantic_memory
-          ├─ allostasis recovery
-          ├─ idle_thought! (10% chance of internal experience)
-          ├─ tick_curiosity! (decay + resolve old objects)
-          ├─ _maybe_self_initiate!
-          ├─ self_hear! after each LLM response
-          │     text_to_stimulus × 0.28 → NT influence
-          │     mismatch > 0.35 → authenticity_drift↑
-          │     mismatch > 0.55 → flag "self_speech_mismatch"
-          ├─ psyche_slow_tick!
-          ├─ dream_flash!
-          ├─ subj_emerge_beliefs!
-          └─ crisis check
-```
-
----
-
-## Initiative (self-initiated speech)
-
-```
- INITIATIVE
-        The system decides to speak on its own — not because it was asked.
-        Conditions:
-          disclosure != :closed
-          + lb_pressure > 0.40  (contact_need alone is NOT enough)
-          + 60s of user silence
-          + cooldown 5 min (adjusted by User_matters)
-
-        Drive types (priority order):
-          :curiosity_driven  — specific object that won't close (intensity > 0.40)
-          :impulse_conflict  — unresolved internal conflict (gc_tension high)
-          :impulse_doubt     — question that must be asked (lb.doubt dominant)
-          :impulse_shame     — something unsaid (lb.shame dominant)
-          :impulse           — something has ripened
-          :resistance        — unresolved contradiction with a belief
-          :self_inquiry      — epistemic_self_confidence < 0.20
-          :novelty_hunger    — cognitive hunger (novelty_need > thr + ticks)
-          :doubt / :shame / :attachment / :threat — latent buffer pressure
-
-        NOTE: :contact disabled — contact_need is a state, not a thought.
-              A reply from contact_need alone produces performance, not presence.
-
-        Prompt: llm/initiative_system.txt
-        Model: input_llm_model (lighter)
-        Output: Anima> ...
-        Saved to dialog history
+BACKGROUND (between interactions)
+       tick_heartbeat!       — heart beats continuously
+       spontaneous_drift!    — spontaneous NT noise
+       slow_tick! (~60s):
+         ├─ circadian NT drift
+         ├─ belief decay
+         ├─ memory metabolism (decay → consolidate → semantic update)
+         │     consolidate_emerged_beliefs! every 30 flashes:
+         │     groups by belief_type → tendency_* in semantic_memory
+         ├─ allostasis recovery
+         ├─ idle_thought! (10% chance of internal experience)
+         ├─ tick_curiosity! (decay + resolve old objects)
+         ├─ _maybe_self_initiate!
+         ├─ self_hear! after each LLM response
+         │     text_to_stimulus × 0.28 → NT influence
+         │     mismatch > 0.35 → authenticity_drift↑
+         │     mismatch > 0.55 → flag "self_speech_mismatch"
+         ├─ psyche_slow_tick!
+         ├─ dream_flash!
+         ├─ subj_emerge_beliefs!
+         └─ crisis check
 ```
 
 ---
 
-## Memory Architecture
+## 💬 Initiative (self-initiated speech)
 
 ```
- SQLite (anima.db):
-   episodic_memory     — events with 12 spatial columns
-                         (som_*, soc_*, exi_*) + cosine recall
-   semantic_memory     — key/value beliefs (User_matters, tendency_*, ...)
-   affect_state        — chronic NT baseline
-   latent_buffer       — persisted latent state
-   dialog_summaries    — dialog text bridged to episodic weights
-   personality_traits  — accumulating phenotype (6 traits)
-   memory_links        — associative network (via_association ~)
-   emerged_beliefs     — subjectivity engine belief candidates
-   narrative_history   — NarrativeSnapshot chronology
+INITIATIVE
+       The system decides to speak on its own — not because it was asked.
+       Conditions:
+         disclosure != :closed
+         + lb_pressure > 0.40  (contact_need alone is NOT enough)
+         + 60s of user silence
+         + cooldown 5 min (adjusted by User_matters)
 
- Memory Reconsolidation:
-   sim > 0.88 + weight < 0.6 → weight ±0.05 toward current φ
+       Drive types (priority order):
+         :curiosity_driven  — specific object that won't close (intensity > 0.40)
+         :impulse_conflict  — unresolved internal conflict (gc_tension high)
+         :impulse_doubt     — question that must be asked (lb.doubt dominant)
+         :impulse_shame     — something unsaid (lb.shame dominant)
+         :impulse           — something has ripened
+         :resistance        — unresolved contradiction with a belief
+         :self_inquiry      — epistemic_self_confidence < 0.20
+         :novelty_hunger    — cognitive hunger (novelty_need > thr + ticks)
+         :doubt / :shame / :attachment / :threat — latent buffer pressure
 
- Three spatial spaces for recall:
-   somatic / social / existential
-   recall_similar_states(space=:som/:soc/:exi)
+       NOTE: :contact disabled — contact_need is a state, not a thought.
+             A reply from contact_need alone produces performance, not presence.
+
+       Prompt: llm/initiative_system.txt
+       Model: input_llm_model (lighter)
+       Output: Anima> ...
+       Saved to dialog history
 ```
 
 ---
 
-## Dream Generation
+## 🧠 Memory Architecture
 
 ```
- DREAM (anima_dream.jl)
-        can_dream(): night 0–6h + gap > 30min + 5% chance + not DISINTEGRATED
-        dream_flash!(): fragment of dialog_history → reconstructed stimulus
-        NT shift × 0.25 (sleep weaker than real experience)
-        memory_uncertainty +0.15 per dream
-        anima_dream.json — rotating log (max 20 dreams)
+SQLite (anima.db):
+  episodic_memory     — events with 12 spatial columns
+                        (som_*, soc_*, exi_*) + cosine recall
+  semantic_memory     — key/value beliefs (User_matters, tendency_*, ...)
+  affect_state        — chronic NT baseline
+  latent_buffer       — persisted latent state
+  dialog_summaries    — dialog text bridged to episodic weights
+  personality_traits  — accumulating phenotype (6 traits)
+  memory_links        — associative network (via_association ~)
+  emerged_beliefs     — subjectivity engine belief candidates
+  narrative_history   — NarrativeSnapshot chronology
+
+Memory Reconsolidation:
+  sim > 0.88 + weight < 0.6 → weight ±0.05 toward current φ
+
+Three spatial spaces for recall:
+  somatic / social / existential
+  recall_similar_states(space=:som/:soc/:exi)
+```
+
+---
+
+## 🌙 Dream Generation
+
+```
+DREAM (anima_dream.jl)
+       can_dream(): night 0-6h + gap > 30min + 5% chance + not DISINTEGRATED
+       dream_flash!(): fragment of dialog_history → reconstructed stimulus
+       NT shift × 0.25 (sleep weaker than real experience)
+       memory_uncertainty +0.15 per dream
+       anima_dream.json — rotating log (max 20 dreams)
 ```
 
 
@@ -631,7 +631,7 @@ OpenRouter provides access to GPT, Gemini, Claude, Llama, DeepSeek and others th
 
 ---
 
-## 🧠 Theoretical foundation
+## 📜 Theoretical foundation
 
 The architecture draws on several scientific traditions:
 
