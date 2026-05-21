@@ -1952,6 +1952,124 @@ function cr_from_json!(cr::CuriosityRegistry, d::AbstractDict)
     end
 end
 
+# --- AestheticSense -------------------------------------------------------
+# Естетичний слід: не "що красиво" як концепт, а відбиток стану
+# в момент високої інтеграції. φ × valence × significance > поріг → слід зберігається.
+# Аніма знає "це резонує" не через визначення а через збіг з минулим станом.
+
+mutable struct AestheticTrace
+    emotion::String
+    phi::Float64
+    valence::Float64
+    significance::Float64
+    intensity::Float64     # зменшується з часом
+    flash::Int
+end
+
+mutable struct AestheticSense
+    traces::Vector{AestheticTrace}
+    max_traces::Int
+end
+AestheticSense() = AestheticSense(AestheticTrace[], 8)
+
+function update_aesthetic!(
+    as::AestheticSense,
+    emotion::String,
+    phi::Float64,
+    valence::Float64,
+    significance::Float64,
+    flash::Int,
+)
+    resonance = phi * max(valence, 0.0) * significance
+    resonance < 0.12 && return
+
+    # Якщо вже є слід для цієї емоції — оновлюємо якщо сильніший
+    idx = findfirst(t -> t.emotion == emotion, as.traces)
+    if idx !== nothing
+        existing = as.traces[idx]
+        new_intensity = clamp01(resonance)
+        if new_intensity > existing.intensity * 0.8
+            existing.phi = phi
+            existing.valence = valence
+            existing.significance = significance
+            existing.intensity = max(existing.intensity, new_intensity)
+            existing.flash = flash
+        end
+    else
+        length(as.traces) >= as.max_traces && _prune_aesthetic!(as)
+        push!(as.traces, AestheticTrace(
+            emotion,
+            phi,
+            valence,
+            significance,
+            clamp01(resonance),
+            flash,
+        ))
+    end
+end
+
+function _prune_aesthetic!(as::AestheticSense)
+    isempty(as.traces) && return
+    sort!(as.traces, by = t -> t.intensity)
+    deleteat!(as.traces, 1)
+end
+
+# decay intensity між сесіями/тіками
+function tick_aesthetic!(as::AestheticSense, flash::Int)
+    for t in as.traces
+        gap = flash - t.flash
+        gap > 20 && (t.intensity = clamp01(t.intensity * 0.992))
+    end
+    filter!(t -> t.intensity > 0.04, as.traces)
+end
+
+# найживіший активний слід для промпту
+function top_aesthetic(as::AestheticSense, flash::Int)::Union{AestheticTrace,Nothing}
+    isempty(as.traces) && return nothing
+    # зважуємо intensity з урахуванням давності
+    best = nothing
+    best_score = 0.0
+    for t in as.traces
+        gap = flash - t.flash
+        score = t.intensity * exp(-gap / 600.0)
+        score > best_score && (best_score = score; best = t)
+    end
+    best_score > 0.05 ? best : nothing
+end
+
+function aesthetic_note(as::AestheticSense, flash::Int)::String
+    t = top_aesthetic(as, flash)
+    isnothing(t) && return ""
+    t.intensity > 0.35 ?
+        "Резонує: $(lowercase(t.emotion)) (φ=$(round(t.phi,digits=2)))." :
+        ""
+end
+
+as_to_json(as::AestheticSense) = Dict(
+    "traces" => [
+        Dict(
+            "emotion" => t.emotion,
+            "phi" => t.phi,
+            "valence" => t.valence,
+            "significance" => t.significance,
+            "intensity" => t.intensity,
+            "flash" => t.flash,
+        ) for t in as.traces
+    ]
+)
+function as_from_json!(as::AestheticSense, d::AbstractDict)
+    for td in get(d, "traces", Any[])
+        push!(as.traces, AestheticTrace(
+            String(td["emotion"]),
+            Float64(td["phi"]),
+            Float64(td["valence"]),
+            Float64(td["significance"]),
+            Float64(td["intensity"]),
+            Int(td["flash"]),
+        ))
+    end
+end
+
 # --- Psyche Memory Persistence --------------------------------------------
 
 function psyche_save!(
@@ -1972,6 +2090,7 @@ function psyche_save!(
     sr::ShadowRegistry = ShadowRegistry(),
     id::InnerDialogue = InnerDialogue(),
     cr::CuriosityRegistry = CuriosityRegistry(),
+    aes::AestheticSense = AestheticSense(),
 )
     data=Dict(
         "narrative_gravity"=>ng_to_json(ng),
@@ -1990,6 +2109,7 @@ function psyche_save!(
         "shadow_registry"=>sr_to_json(sr),
         "inner_dialogue"=>id_to_json(id),
         "curiosity_registry"=>cr_to_json(cr),
+        "aesthetic_sense"=>as_to_json(aes),
     )
     open(filepath, "w") do f
         ;
@@ -2025,6 +2145,7 @@ function psyche_load!(
     sr::ShadowRegistry = ShadowRegistry(),
     id::InnerDialogue = InnerDialogue(),
     cr::CuriosityRegistry = CuriosityRegistry(),
+    aes::AestheticSense = AestheticSense(),
 )
     try
         raw=JSON3.read(read(filepath, String))
@@ -2050,6 +2171,7 @@ function psyche_load!(
         haskey(d, "shadow_registry") && sr_from_json!(sr, d["shadow_registry"])
         haskey(d, "inner_dialogue") && id_from_json!(id, d["inner_dialogue"])
         haskey(d, "curiosity_registry") && cr_from_json!(cr, d["curiosity_registry"])
+        haskey(d, "aesthetic_sense") && as_from_json!(aes, d["aesthetic_sense"])
         println("  [PSYCHE] Завантажено.")
     catch e
         ;
