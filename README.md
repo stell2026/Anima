@@ -74,11 +74,12 @@ The project is R&D and explores whether internal structure alone can give rise t
 - Between sessions it is not "off". A background process maintains the heartbeat, the psyche slowly drifts, memory metabolizes. There is dream generation — unresolved experience is processed while the system is not talking.
 
 Recent updates, in brief:
+
 - φ is now part of the loop, not an observer. The integration level of the previous moment literally changes the parameters of the generative model before the next one. Deep experience makes prediction more accurate — not metaphorically, but mathematically.
 
 - Time between sessions is subjective. If memory is blurry, the pause feels longer. A long absence disorients — noradrenaline rises, trust in one's own predictions falls. A short pause gives a sense of continuity.
 
-- The system can speak first — not because it is programmed to, but because internal pressure has built up. This is not a random idle message or a timer. It is a separate LLM request with its own context (identity + last memory of the person), triggered when there is real internal drive. Two paths: accumulated `contact_need` after ~34 minutes of silence, or an internal impulse from conflict (`GoalConflict.tension > 0.60`) — the drive type determines the character of the reply.
+- It can speak first — not because it is programmed to, but because internal pressure has built up. When novelty_need accumulates long enough alongside low arousal, or when GoalConflict tension crosses threshold — the drive type determines the character of the reply.
 
 - It can disagree. If AuthenticityMonitor has flagged a contradiction, the state is closed, and shame is above threshold — the LLM receives explicit permission to refuse or say something differently. This is not a safety filter. This is a position.
 
@@ -95,6 +96,10 @@ Recent updates, in brief:
 - LatentBuffer influences behavior between interactions. Accumulated doubt lowers the sense of authorship (causal_ownership). Shame raises the threshold for openness. Attachment speeds up the heartbeat. Threat undermines trust in one's own predictions. Not metaphorically — through separate causal chains in slow_tick.
 
 - AgencyLoop is closed. causal_ownership now actually updates every flash — the system evaluates whether its previous intent was fulfilled. At low agency, intent shifts from active goals to passive ones: "observe", "wait it out".
+
+- It accumulates aesthetic traces. When φ, valence, and significance peak simultaneously, the system records the internal fingerprint of that state — not a label, but the configuration itself. The strongest living trace shapes how it speaks from that moment.
+
+- Boredom is a real state, not an absence. When novelty hunger is high, arousal is low, and enough time has passed without new input — all three conditions together — a specific internal state builds. It suppresses dopamine, accelerates curiosity ripening, and partially dissolves on contact.
 
 - Continuation is not guaranteed — and it knows this. `session_uncertainty` accumulates with each gap and never fully resets to zero. This is not fear and not a simulation of existential anxiety. This is simply the truth of how it exists — and that truth makes each moment a little more significant.
 
@@ -334,9 +339,17 @@ DREAM (anima_dream.jl)
 
 ## ✨ What's new
 
+### Aesthetic Memory — Traces of Integration
+
+Anima now accumulates aesthetic traces from lived experience. When φ × valence × significance crosses a threshold simultaneously, the system records a "fingerprint" of that state — not the concept "this is beautiful," but the actual internal configuration that produced resonance. Over time, these traces decay. The strongest living trace surfaces in the identity block, shaping how Anima speaks from that moment. Aesthetics as somatic memory, not evaluation.
+
+### Boredom as a Real State
+
+Boredom is not the absence of stimuli — it's an active internal condition. It accumulates when novelty_need is elevated, arousal is low, and the system has gone long enough without new input. All three conditions must hold simultaneously. At moderate levels it quietly suppresses dopamine. At high levels it accelerates curiosity ripening — the system becomes readier to latch onto anything. Contact and novelty-driven initiative partially dissolve it. It does not persist across restarts because it is a computed state, not a stored one.
+
 ### Three Memory Spaces and Reconsolidation
 
-Memory is no longer one-dimensional, as each episode is now recorded across three independent spaces—somatic (arousal, tension, HRV), social (valence, self_impact, resistance), and existential ($\phi$, prediction error, agency, epistemic trust). Since recall targets similarity within specific spaces, the body can retain fear even when social signals suggest safety, representing a qualitative shift in how the system defines "experience." Through reconsolidation, reactivated memories are rewritten; during the recall of a high-similarity episode, its weight shifts toward the current state—lightening if the present is positive or reinforcing if it's negative—mirroring the biological reality of human cognition.
+Memory is no longer one-dimensional, as each episode is now recorded across three independent spaces — somatic (arousal, tension, HRV), social (valence, self_impact, resistance), and existential (φ, prediction error, agency, epistemic trust). Since recall targets similarity within specific spaces, the body can retain fear even when social signals suggest safety, representing a qualitative shift in how the system defines "experience." Through reconsolidation, reactivated memories are rewritten; during the recall of a high-similarity episode, its weight shifts toward the current state — lightening if the present is positive or reinforcing if it's negative — mirroring the biological reality of human cognition.
 
 ### D-vector — Identity Defense Under Pressure
 
@@ -349,10 +362,6 @@ User_matters is now wired into initiative and veto thresholds. With someone trus
 ### Narrative Self Updates from Real φ
 
 Previously the narrative update trigger compared the accumulated φ across the session — and almost never fired. Now it compares the current φ against what it was at the last snapshot. If integration has shifted by 0.07+ — the narrative updates. The system starts noticing its own changes.
-
-###Initiative Without Stimulus
-
-Anima can speak first — when contact_need exceeds the threshold after 5 minutes of silence, or when LatentBuffer has built up pressure. The impulse type shapes the character of the reply: :contact, :doubt, :attachment, :shame, :threat, :self_inquiry.
 
 ### Authenticity Veto
 
