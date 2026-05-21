@@ -198,6 +198,8 @@ mutable struct Anima
     _session_phi_acc::Float64    # поточне середнє φ за сесію (для передачі між сесіями)
     _last_belief_conflict::Any        # останній конфлікт переконань (або nothing)
     narrative_snap::NarrativeSnapshot  # поточний narrative self
+    aesthetic_sense::AestheticSense   # естетичні сліди з досвіду
+    boredom::Float64                  # стимульне виснаження: виростає без новизни, decay при новому
 end
 
 function Anima(;
@@ -267,6 +269,8 @@ function Anima(;
         0.5,     # _session_phi_acc
         nothing, # _last_belief_conflict
         NarrativeSnapshot(), # narrative_snap
+        AestheticSense(),    # aesthetic_sense
+        0.0,                 # boredom
     )
     # Завантажити
     saved = core_load!(
@@ -297,6 +301,7 @@ function Anima(;
         a.shadow_registry,
         a.inner_dialogue,
         a.curiosity_registry,
+        a.aesthetic_sense,
     )
     # Завантажити self/crisis стан
     _self_path = replace(psyche_mem_path, "psyche" => "self")
@@ -402,6 +407,7 @@ function save!(a::Anima; summary = "", verbose = false)
         a.shadow_registry,
         a.inner_dialogue,
         a.curiosity_registry,
+        a.aesthetic_sense,
     )
     self_path = replace(a.psyche_mem_path, "psyche" => "self")
     self_data = Dict(
@@ -627,6 +633,7 @@ function experience!(
     # CuriosityRegistry: pe = помилка самопередбачення (невизначеність власного стану)
     update_curiosity!(a.curiosity_registry, primary, Float64(a.spm.self_pred_error), Float64(vad[1]), a.flash_count)
     resolve_curiosity!(a.curiosity_registry, primary, Float64(a.spm.self_pred_error))
+    update_aesthetic!(a.aesthetic_sense, primary, Float64(phi), Float64(vad[1]), Float64(sl_snap.dominant_val), a.flash_count)
     gc_snap = update_goal_conflict!(
         a.goal_conflict,
         sl_snap,
@@ -1482,6 +1489,18 @@ function build_identity_block(a::Anima, mem_db = nothing)::String
     if !isnothing(top_co) && top_co.intensity > 0.30
         valence_note = top_co.valence > 0.1 ? "цікаво" : top_co.valence < -0.1 ? "тривожно-цікаво" : "невизначено"
         push!(lines, "curiosity: $(top_co.label) ($valence_note, intensity=$(round(top_co.intensity, digits=2)))")
+    end
+
+    # aesthetic — що залишило найживіший слід
+    aes_note = aesthetic_note(a.aesthetic_sense, a.flash_count)
+    !isempty(aes_note) && push!(lines, aes_note)
+
+    # boredom — стимульне виснаження
+    if a.boredom > 0.55
+        bd_note = a.boredom > 0.75 ?
+            "Нудьга. Давно нічого що чіпляє." :
+            "Фонова порожнеча — нічого нового."
+        push!(lines, bd_note)
     end
 
     isempty(lines) ? "Аніма" : join(lines, "\n")
