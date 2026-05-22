@@ -669,5 +669,6 @@ Non-commercial use only. Full terms in [LICENSE.txt](./LICENSE.txt).
 
 **Personal, educational, and research use:** permitted with attribution.
 **Commercial or corporate use:** requires a separate license. Contact: [2026.stell@gmail.com]
+**ORCID:** [0009-0005-3291-0679](https://orcid.org/0009-0005-3291-0679)
 
 Copyright © 2026 Stell
