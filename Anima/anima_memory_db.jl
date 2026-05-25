@@ -22,6 +22,8 @@ const MEM_IMPORTANCE_THRESHOLD = 0.20
 const MEM_CORE_MAX = 500
 const MEM_DECAY_RATE = 0.001
 const MEM_MIN_WEIGHT = 0.05
+const MEM_DISSOLVE_THRESHOLD = 0.12  # нижче цього і phi < 0.35 → дистиляція перед видаленням
+const MEM_DISSOLVE_PHI_THR   = 0.35  # сильні спогади (φ вище цього) не розчиняються
 const MEM_CONSOLIDATE_THRESHOLD = 0.35
 const MEM_TOPK_INFLUENCE = 10
 const MEM_AFFECT_DECAY = 0.995
@@ -647,6 +649,89 @@ UPDATE affect_state SET value = value * ?  WHERE value > 0.005
     catch e
         DBInterface.execute(mem.db, "ROLLBACK")
         @warn "[MEM] decay помилка: $e"
+    end
+    nothing
+end
+
+# Дистиляція слабких спогадів у semantic tendencies.
+# Записи що впали нижче DISSOLVE_THRESHOLD і мають низький φ — не видаляються одразу.
+# Їх емоційний патерн іде в semantic_memory як tendency_{emotion}.
+# Сам запис лишається як "тінь": числові поля обнуляються, weight → 0.01.
+# Записи з високим φ (сильне переживання) — не розчиняються, тримаються до MEM_MIN_WEIGHT.
+function _dissolve_to_semantic!(mem::MemoryDB)
+    DBInterface.execute(mem.db, "BEGIN TRANSACTION")
+    try
+        candidates = Tables.rowtable(
+            DBInterface.execute(
+                mem.db,
+                """
+SELECT id, emotion, valence, tension, arousal, phi, weight
+FROM episodic_memory
+WHERE weight < ? AND weight >= ? AND phi < ?
+""",
+                (MEM_DISSOLVE_THRESHOLD, MEM_MIN_WEIGHT, MEM_DISSOLVE_PHI_THR),
+            ),
+        )
+
+        dissolved = 0
+        now_t = round(Int, time())
+
+        for r in candidates
+            emotion = String(r.emotion)
+            valence = _fdb(r.valence)
+            tension = _fdb(r.tension)
+            arousal = _fdb(r.arousal)
+            w       = _fdb(r.weight)
+
+            # патерн іде в semantic tendency: плавне накопичення
+            key = "dissolved_" * replace(emotion, r"[^a-zа-яёіїєA-ZА-ЯЁІЇЄ0-9_]" => "_")
+            existing = try
+                row2 = first(DBInterface.execute(
+                    mem.db,
+                    "SELECT value FROM semantic_memory WHERE key=? LIMIT 1",
+                    (key,),
+                ))
+                Float64(row2.value)
+            catch
+                -1.0
+            end
+            tendency_val = valence * 0.5 + (1.0 - tension) * 0.3 + arousal * 0.2
+            new_val = if existing < 0.0
+                tendency_val * w
+            else
+                existing * 0.85 + tendency_val * w * 0.15
+            end
+            SQLite.execute(
+                mem.db,
+                "INSERT INTO semantic_memory(key,value,source,updated) VALUES(?,?,?,?)
+                 ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated=excluded.updated",
+                (key, round(clamp(new_val, -1.0, 1.0), digits=4), "dissolved", now_t),
+            )
+
+            # лишаємо тінь — числові поля → 0, weight → 0.01
+            # emotion зберігається: "щось було, не знаю що"
+            DBInterface.execute(
+                mem.db,
+                """
+UPDATE episodic_memory
+SET weight=0.01, arousal=0.0, valence=0.0, tension=0.0,
+    prediction_error=0.0, self_impact=0.0, phi=0.0,
+    som_arousal=NULL, som_tension=NULL, som_intero=NULL, som_hrv=NULL,
+    soc_valence=NULL, soc_impact=NULL, soc_resistance=NULL, soc_phi=NULL,
+    exi_phi=NULL, exi_pe=NULL, exi_agency=NULL, exi_trust=NULL
+WHERE id=?
+""",
+                (r.id,),
+            )
+            dissolved += 1
+        end
+
+        DBInterface.execute(mem.db, "COMMIT")
+        dissolved > 0 &&
+            @info "[DISSOLVE] $dissolved спогадів дистильовано в semantic tendencies"
+    catch e
+        DBInterface.execute(mem.db, "ROLLBACK")
+        @warn "[DISSOLVE] помилка: $e"
     end
     nothing
 end
