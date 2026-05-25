@@ -200,6 +200,7 @@ mutable struct Anima
     narrative_snap::NarrativeSnapshot  # поточний narrative self
     aesthetic_sense::AestheticSense   # естетичні сліди з досвіду
     boredom::Float64                  # стимульне виснаження: виростає без новизни, decay при новому
+    attention_focus::AttentionFocus   # конкурентний фокус уваги
 end
 
 function Anima(;
@@ -271,6 +272,7 @@ function Anima(;
         NarrativeSnapshot(), # narrative_snap
         AestheticSense(),    # aesthetic_sense
         0.0,                 # boredom
+        AttentionFocus(),    # attention_focus
     )
     # Завантажити
     saved = core_load!(
@@ -302,8 +304,8 @@ function Anima(;
         a.inner_dialogue,
         a.curiosity_registry,
         a.aesthetic_sense,
+        a.attention_focus,
     )
-    # Завантажити self/crisis стан
     _self_path = replace(psyche_mem_path, "psyche" => "self")
     if isfile(_self_path)
         try
@@ -408,6 +410,7 @@ function save!(a::Anima; summary = "", verbose = false)
         a.inner_dialogue,
         a.curiosity_registry,
         a.aesthetic_sense,
+        a.attention_focus,
     )
     self_path = replace(a.psyche_mem_path, "psyche" => "self")
     self_data = Dict(
@@ -634,6 +637,56 @@ function experience!(
     update_curiosity!(a.curiosity_registry, primary, Float64(a.spm.self_pred_error), Float64(vad[1]), a.flash_count)
     resolve_curiosity!(a.curiosity_registry, primary, Float64(a.spm.self_pred_error))
     update_aesthetic!(a.aesthetic_sense, primary, Float64(phi), Float64(vad[1]), Float64(sl_snap.dominant_val), a.flash_count)
+
+    # AttentionFocus: конкурентний відбір що домінує у свідомості прямо зараз
+    let lb = a.latent_buffer
+        _lb_vals = Dict(:doubt=>lb.doubt, :shame=>lb.shame, :attachment=>lb.attachment, :threat=>lb.threat)
+        _lb_dom = argmax(_lb_vals)
+        _bc_sig = isnothing(a._last_belief_conflict) ? 0.0 : Float64(a._last_belief_conflict.signal_strength)
+        _bc_name = isnothing(a._last_belief_conflict) ? "" : String(a._last_belief_conflict.belief_name)
+        update_attention_focus!(
+            a.attention_focus, a.flash_count;
+            identity_threat    = Float64(a.agency.identity_threat),
+            allostatic_load    = Float64(a.interoception.allostatic_load),
+            pred_error         = pred.error,
+            curiosity_obj      = top_curiosity(a.curiosity_registry),
+            shadow_pressure    = Float64(a.shadow_registry.pressure),
+            shame_level        = Float64(a.shame.level),
+            gc_tension         = Float64(a.goal_conflict.tension),
+            gc_label           = !isempty(a.goal_conflict.need_a) ?
+                                     "$(a.goal_conflict.need_a) vs $(a.goal_conflict.need_b)" : "",
+            lb_dominant        = _lb_dom,
+            lb_val             = _lb_vals[_lb_dom],
+            belief_conflict_name   = _bc_name,
+            belief_conflict_signal = _bc_sig,
+            external_label     = isempty(user_message) ? "" : first(user_message, 40),
+            external_intensity = isempty(user_message) ? 0.0 :
+                                     clamp(pred.error * 0.5 + abs(Float64(vad[1])) * 0.3, 0.0, 1.0),
+        )
+    end
+
+    # Вплив фокусу на стимул: якщо стимул резонує з dominant — підсилюємо pred_error і arousal
+    # Чесно: той самий стимул сприймається інакше залежно від того що у фокусі
+    let af = a.attention_focus
+        if !isnothing(af.dominant) && af.dominant.intensity > 0.30
+            resonance = 0.0
+            ds = af.dominant.source
+            if ds == :curiosity && pred.error > 0.15
+                resonance = af.dominant.intensity * 0.25
+            elseif ds == :goal_conflict && (get(stim, "tension", 0.0) > 0.1 || get(stim, "cohesion", 0.0) < 0.0)
+                resonance = af.dominant.intensity * 0.20
+            elseif ds == :threat && (get(stim, "tension", 0.0) > 0.0 || get(stim, "arousal", 0.0) > 0.0)
+                resonance = af.dominant.intensity * 0.30
+            elseif ds == :latent || ds == :shadow
+                resonance = af.dominant.intensity * 0.15
+            end
+            if resonance > 0.0
+                stim["arousal"] = clamp(get(stim, "arousal", 0.0) + resonance * 0.4, -1.0, 1.0)
+                apply_stimulus!(a.nt, Dict{String,Float64}("arousal" => resonance * 0.2))
+                @info "[FOCUS] резонанс з $(af.dominant.source): +$(round(resonance, digits=2))"
+            end
+        end
+    end
     gc_snap = update_goal_conflict!(
         a.goal_conflict,
         sl_snap,
@@ -1501,6 +1554,20 @@ function build_identity_block(a::Anima, mem_db = nothing)::String
             "Нудьга. Давно нічого що чіпляє." :
             "Фонова порожнеча — нічого нового."
         push!(lines, bd_note)
+    end
+
+    # attention focus — що зараз реально у свідомості
+    let af = a.attention_focus
+        if !isnothing(af.dominant) && af.dominant.intensity > 0.30
+            src_labels = Dict(
+                :threat => "загроза", :curiosity => "цікавість", :shadow => "тінь",
+                :goal_conflict => "конфлікт", :latent => "підспудне",
+                :belief => "переконання", :external => "зовнішнє",
+                :shame => "сором", :pred_error => "невизначеність", :aesthetic => "естетика",
+            )
+            src_str = get(src_labels, af.dominant.source, String(af.dominant.source))
+            push!(lines, "focus: $(af.dominant.label) [$src_str, $(round(af.dominant.intensity, digits=2))]")
+        end
     end
 
     isempty(lines) ? "Аніма" : join(lines, "\n")
