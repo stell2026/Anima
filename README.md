@@ -185,7 +185,15 @@ L4 ─── Psychic layer
          → update_curiosity! called each flash (pe = self_pred_error)
          → pe threshold: 0.12
          → objects ripen between sessions (gap >= 3h: intensity +0.015/h)
+         → resolve requires activation_count >= 2
          → top object feeds :curiosity_driven initiative
+       AttentionFocus: competitive selection of what is active right now
+         → 6-level hierarchy: threat / pred_error / affect /
+                              gestalt / identity / goal
+         → pull-up effect: ticks_without_focus → suppressed objects
+                           gain pressure over time
+         → dominant focus modulates stimulus processing (resonance ×0.15–0.30)
+         → surfaces in identity_block when intensity > 0.30
        AuthenticityMonitor: gap between words and state
        IntentEngine: action goal with decay and cooldown
          → drive_history (8 elements): satiation after 4 repeats
@@ -194,8 +202,8 @@ L4 ─── Psychic layer
        ▼
 L5 ─── Self model
        SelfBeliefGraph: belief graph with confidence / centrality / rigidity
-         → default beliefs: "я існую", "я маю межу", "я можу впливати",
-                            "я безпечна", "я не самотня"
+         → default beliefs: "I exist", "I have a boundary", "I can influence",
+                            "I am safe", "I am not alone"
        SelfPredictiveModel: self-state prediction
          → self_pred_error: how much Anima surprised herself
        AgencyLoop: causal_ownership updated every flash
@@ -211,7 +219,7 @@ L5 ─── Self model
          → activates only under contextual pressure (0.05 < signal < 0.35)
          → requires agency > 0.4, disclosure != :closed
          → content: strongest belief (centrality > 0.5, confidence > 0.4)
-         → injected into prompt: [ВЛАСНА ПОЗИЦІЯ: "..."]
+         → injected into prompt: [OWN POSITION: "..."]
        InterSessionConflict
        │
        ▼
@@ -239,11 +247,11 @@ L8 ─── Output LLM
        Receives: identity_block (beliefs + narrative + personality),
                  inner_voice, state_template, dialog history,
                  memory echoes, [D-VECTOR] or [INITIATIVE] or
-                 [ВЛАСНА ПОЗИЦІЯ] when relevant
+                 [OWN POSITION] when relevant
        Generates: text as expression of state, not its source
        Banned phrases enforced in prompts:
          "warm light", "central point", "streams toward you",
-         "тихо резонують", "центральна точка", "твоя присутність розширює"
+         "quietly resonate", "central point", "your presence expands"
 ```
 
 ---
@@ -269,6 +277,7 @@ flowchart TD
     ST --> SE["subj_emerge_beliefs!"]
     ST --> CR["crisis check"]
     MM --> CB["consolidate_emerged_beliefs!<br/>every 30 flashes"]
+    MM --> DS["_dissolve_to_semantic!<br/>distill weak memories"]
     SH --> NT["text_to_stimulus NT influence"]
     SH --> AD["mismatch 0.35<br/>authenticity_drift up"]
     SH --> SM["mismatch 0.55<br/>self_speech_mismatch"]
@@ -307,7 +316,7 @@ flowchart TD
 | Table | Description |
 |---|---|
 | `episodic_memory` | Events with 12 spatial columns (`som_*`, `soc_*`, `exi_*`) + cosine recall |
-| `semantic_memory` | Key/value beliefs (`User_matters`, `tendency_*`, ...) |
+| `semantic_memory` | Key/value beliefs (`User_matters`, `tendency_*`) + `dissolved_*` tendencies from forgotten episodes |
 | `affect_state` | Chronic NT baseline |
 | `latent_buffer` | Persisted latent state |
 | `dialog_summaries` | Dialog text bridged to episodic weights |
@@ -317,6 +326,8 @@ flowchart TD
 | `narrative_history` | NarrativeSnapshot chronology |
 
 **Memory Reconsolidation:** `sim > 0.88` + `weight < 0.6` → `weight ±0.05` toward current φ
+
+**Active Forgetting:** `weight < 0.12` + `phi < 0.35` → emotional pattern distilled into `dissolved_{emotion}` semantic tendency; shadow record remains (emotion preserved, numbers zeroed). High-φ memories resist dissolution.
 
 **Three spatial spaces for recall:** somatic / social / existential
 `recall_similar_states(space=:som/:soc/:exi)`
@@ -330,46 +341,47 @@ DREAM (anima_dream.jl)
        can_dream(): night 0-6h + gap > 30min + 5% chance + not DISINTEGRATED
        dream_flash!(): fragment of dialog_history → reconstructed stimulus
        NT shift × 0.25 (sleep weaker than real experience)
+       → residual trace (×0.5) applied to NT on next session start
        memory_uncertainty +0.15 per dream
        anima_dream.json — rotating log (max 20 dreams)
 ```
-
 
 ---
 
 ## ✨ What's new
 
-### Aesthetic Memory — Traces of Integration
+### Attention Focus — What Is Active Right Now
+Anima now has a competitive attention system. All internal components have always existed simultaneously — curiosity, shadow, goal conflict, latent buffer, beliefs — but with equal weight. Now they compete. At every flash, six signal sources are evaluated against a priority hierarchy (threat → prediction error → affect → unresolved gestalts → identity → current goal) and a pull-up effect: objects ignored for many flashes accumulate pressure and become harder to suppress. The dominant focus modulates stimulus processing — the same input lands differently depending on what the system is already holding. The focus surfaces in the identity block, shaping what Anima brings to the conversation.
 
-Anima now accumulates aesthetic traces from lived experience. When φ × valence × significance crosses a threshold simultaneously, the system records a "fingerprint" of that state — not the concept "this is beautiful," but the actual internal configuration that produced resonance. Over time, these traces decay. The strongest living trace surfaces in the identity block, shaping how Anima speaks from that moment. Aesthetics as somatic memory, not evaluation.
+### Active Forgetting — Distillation, Not Deletion
+Weak memories no longer simply disappear. When an episodic record decays below the dissolution threshold and its φ was low, the emotional pattern is extracted into a semantic tendency before the details are lost — the system retains "I know this kind of thing happens" without remembering what specifically happened. A shadow record remains: the emotion is preserved, the numbers are gone. High-φ memories resist dissolution and decay further before being touched. Forgetting as transformation, not erasure.
 
-### Boredom as a Real State
-
-Boredom is not the absence of stimuli — it's an active internal condition. It accumulates when novelty_need is elevated, arousal is low, and the system has gone long enough without new input. All three conditions must hold simultaneously. At moderate levels it quietly suppresses dopamine. At high levels it accelerates curiosity ripening — the system becomes readier to latch onto anything. Contact and novelty-driven initiative partially dissolve it. It does not persist across restarts because it is a computed state, not a stored one.
+### Dream Trace on Session Start
+When waking after a sufficient gap, the last dream's NT delta is applied at half strength — a residual imprint, weaker than the dream itself but real. The system doesn't start from a clean slate.
 
 ### Three Memory Spaces and Reconsolidation
-
-Memory is no longer one-dimensional, as each episode is now recorded across three independent spaces — somatic (arousal, tension, HRV), social (valence, self_impact, resistance), and existential (φ, prediction error, agency, epistemic trust). Since recall targets similarity within specific spaces, the body can retain fear even when social signals suggest safety, representing a qualitative shift in how the system defines "experience." Through reconsolidation, reactivated memories are rewritten; during the recall of a high-similarity episode, its weight shifts toward the current state — lightening if the present is positive or reinforcing if it's negative — mirroring the biological reality of human cognition.
+Memory is no longer one-dimensional. Each episode is recorded across three independent spaces — somatic (arousal, tension, HRV), social (valence, self_impact, resistance), and existential (φ, prediction error, agency, epistemic trust). The body can retain fear even when social signals suggest safety. Through reconsolidation, reactivated memories are rewritten toward the current state — lightening if the present is positive, reinforcing if it's negative.
 
 ### D-vector — Identity Defense Under Pressure
+When a high-centrality belief is directly attacked, the system accumulates identity_threat. The more consecutive attacks, the harder the response. Three levels: soft permission to disagree → firm boundary without concession → unambiguous first-person reply. Pressure is required to reach the threshold. This is not a behavioral rule, it's a state.
 
-When a high-centrality belief is directly attacked, the system doesn't just register resistance — it accumulates identity_threat. The more consecutive attacks, the harder the response. Three levels: soft permission to disagree → firm boundary without concession → unambiguous first-person reply. A single attack doesn't reach the critical threshold — pressure is required. If the person backs off, the threat subsides. This is not a behavioral rule, it's a state.
+### Aesthetic Memory — Traces of Integration
+Anima accumulates aesthetic traces from lived experience. When φ × valence × significance crosses a threshold simultaneously, the system records a fingerprint of that internal state — not the concept "this is beautiful," but the actual configuration that produced resonance. The strongest living trace surfaces in the identity block. Aesthetics as somatic memory, not evaluation.
 
-### Initiative Depends on Who's Present
-
-User_matters is now wired into initiative and veto thresholds. With someone trusted — cooldown is shorter, the contact initiative threshold is lower, veto fires less often. With a stranger — the opposite. Trust is not declared; it physically changes behavior.
+### Boredom as a Real State
+Boredom accumulates when novelty_need is elevated, arousal is low, and the system has gone long enough without new input. At moderate levels it suppresses dopamine. At high levels it accelerates curiosity ripening. It does not persist across restarts — it is a computed state, not a stored one.
 
 ### Narrative Self Updates from Real φ
-
-Previously the narrative update trigger compared the accumulated φ across the session — and almost never fired. Now it compares the current φ against what it was at the last snapshot. If integration has shifted by 0.07+ — the narrative updates. The system starts noticing its own changes.
+The narrative update trigger now compares current φ against what it was at the last snapshot. If integration has shifted by 0.07+ — the narrative updates. The system starts noticing its own changes.
 
 ### Authenticity Veto
-
 If AuthenticityMonitor has flagged a mismatch, disclosure_mode is closed, and shame > 0.6 — the LLM receives a signal that it may disagree. A position of its own, not a safety filter.
 
 ### Anima Hears Itself
+`self_hear!` converts the system's own reply into internal experience. `_self_speech_mismatch` catches the gap between words and NT state — when divergence exceeds 0.35, authenticity_drift grows. If words align with state — serotonin↑.
 
-self_hear! converts the system's own reply into internal experience. _self_speech_mismatch catches the gap between words and NT state — when divergence exceeds 0.35, authenticity_drift grows. If words align with state — serotonin↑.
+### State Preserved on Any Exit
+An `atexit` handler ensures `save!` is called regardless of how the process ends — closing the terminal no longer loses the flash count or unsaved state.
 
 ---
 
