@@ -1903,10 +1903,11 @@ function tick_curiosity!(cr::CuriosityRegistry, flash::Int)
 end
 
 # об'єкт "закрився" — pred_error впав (отримали відповідь)
+# Потребує activation_count >= 2: один флеш — ще не цікавість, а шум
 function resolve_curiosity!(cr::CuriosityRegistry, emotion_ctx::String, pe::Float64)
     pe > 0.25 && return
     idx = findfirst(o -> o.id == emotion_ctx && !o.resolved, cr.objects)
-    idx !== nothing && (cr.objects[idx].resolved = true)
+    idx !== nothing && cr.objects[idx].activation_count >= 2 && (cr.objects[idx].resolved = true)
 end
 
 function _prune_curiosity!(cr::CuriosityRegistry)
@@ -1950,6 +1951,155 @@ function cr_from_json!(cr::CuriosityRegistry, d::AbstractDict)
             Bool(od["resolved"]),
         ))
     end
+end
+
+# --- AttentionFocus -------------------------------------------------------
+# Конкурентний відбір того що є у фокусі прямо зараз.
+# Не фільтрує що існує — визначає що активне.
+# Джерела конкурують через зважений score з ієрархією (загроза > новизна > афект > гештальт > ідентичність > ціль).
+# Pull-up ефект: ticks_without_focus → давно ігноровані об'єкти тягнуть сильніше.
+
+mutable struct FocusObject
+    source::Symbol      # :threat, :curiosity, :shadow, :goal_conflict, :latent, :belief, :external, :aesthetic
+    label::String
+    intensity::Float64
+    ticks_without_focus::Int
+end
+
+mutable struct AttentionFocus
+    dominant::Union{FocusObject,Nothing}
+    peripheral::Vector{FocusObject}   # до 2
+    last_update_flash::Int
+end
+AttentionFocus() = AttentionFocus(nothing, FocusObject[], 0)
+
+# Зібрати кандидатів з усіх внутрішніх джерел і зовнішнього стимулу.
+# score = base_intensity × hierarchy_weight × pull_up_factor
+# pull_up_factor: кожні 10 флешів без фокусу дають +8% (cap ×2.0)
+function update_attention_focus!(
+    af::AttentionFocus,
+    flash::Int;
+    # рівень 1: загроза
+    identity_threat::Float64 = 0.0,
+    allostatic_load::Float64 = 0.0,
+    # рівень 2: pred_error / новизна
+    pred_error::Float64 = 0.0,
+    curiosity_obj::Union{Any,Nothing} = nothing,
+    # рівень 3: афект
+    shadow_pressure::Float64 = 0.0,
+    shame_level::Float64 = 0.0,
+    # рівень 4: незавершені гештальти
+    gc_tension::Float64 = 0.0,
+    gc_label::String = "",
+    lb_dominant::Symbol = :none,
+    lb_val::Float64 = 0.0,
+    # рівень 5: ідентичність
+    belief_conflict_name::String = "",
+    belief_conflict_signal::Float64 = 0.0,
+    # рівень 6: поточна ціль / зовнішній стимул
+    external_label::String = "",
+    external_intensity::Float64 = 0.0,
+)
+    candidates = FocusObject[]
+
+    function _push!(source, label, base, hierarchy_w)
+        base < 0.08 && return
+        # шукаємо ticks_without_focus з попереднього стану
+        twf = 0
+        if !isnothing(af.dominant) && af.dominant.source == source
+            twf = af.dominant.ticks_without_focus
+        else
+            idx = findfirst(o -> o.source == source, af.peripheral)
+            !isnothing(idx) && (twf = af.peripheral[idx].ticks_without_focus)
+        end
+        pull_up = clamp(1.0 + twf * 0.008, 1.0, 2.0)
+        score = clamp01(base * hierarchy_w * pull_up)
+        push!(candidates, FocusObject(source, label, score, twf))
+    end
+
+    # Рівень 1 — загроза / тіло
+    threat_signal = max(identity_threat, allostatic_load * 0.7)
+    _push!(:threat, "загроза цілісності", threat_signal, 1.00)
+
+    # Рівень 2 — новизна / pred_error
+    _push!(:pred_error, "невирішена невизначеність", pred_error, 0.85)
+    if !isnothing(curiosity_obj) && !curiosity_obj.resolved
+        _push!(:curiosity, curiosity_obj.label, curiosity_obj.intensity, 0.85)
+    end
+
+    # Рівень 3 — афект
+    _push!(:shadow, "тіньовий тиск", shadow_pressure, 0.70)
+    _push!(:shame, "сором", shame_level, 0.70)
+
+    # Рівень 4 — гештальти
+    _push!(:goal_conflict, isempty(gc_label) ? "конфлікт потреб" : gc_label, gc_tension, 0.55)
+    if lb_dominant != :none && lb_val > 0.15
+        lb_labels = Dict(:doubt=>"сумнів", :shame=>"сором", :attachment=>"прив'язаність", :threat=>"загроза")
+        _push!(:latent, get(lb_labels, lb_dominant, String(lb_dominant)), lb_val, 0.55)
+    end
+
+    # Рівень 5 — ідентичність
+    _push!(:belief, isempty(belief_conflict_name) ? "переконання" : belief_conflict_name, belief_conflict_signal, 0.45)
+
+    # Рівень 6 — зовнішній стимул / ціль
+    _push!(:external, isempty(external_label) ? "зовнішній стимул" : external_label, external_intensity, 0.35)
+
+    isempty(candidates) && return af
+
+    # Сортуємо за score
+    sort!(candidates, by = c -> -c.intensity)
+
+    # Оновлюємо ticks_without_focus для всіх попередніх об'єктів що не стали dominant
+    prev_dominant_source = isnothing(af.dominant) ? :none : af.dominant.source
+    for c in candidates
+        if c.source != candidates[1].source
+            c.ticks_without_focus += 1
+        else
+            c.ticks_without_focus = 0
+        end
+    end
+
+    af.dominant = candidates[1]
+    af.peripheral = length(candidates) >= 2 ? candidates[2:min(3, end)] : FocusObject[]
+    af.last_update_flash = flash
+    af
+end
+
+af_to_json(af::AttentionFocus) = Dict(
+    "dominant" => isnothing(af.dominant) ? nothing : Dict(
+        "source" => String(af.dominant.source),
+        "label"  => af.dominant.label,
+        "intensity" => af.dominant.intensity,
+        "twf" => af.dominant.ticks_without_focus,
+    ),
+    "peripheral" => [Dict(
+        "source" => String(o.source),
+        "label"  => o.label,
+        "intensity" => o.intensity,
+        "twf" => o.ticks_without_focus,
+    ) for o in af.peripheral],
+    "last_flash" => af.last_update_flash,
+)
+function af_from_json!(af::AttentionFocus, d::AbstractDict)
+    dom = get(d, "dominant", nothing)
+    if !isnothing(dom) && dom isa AbstractDict
+        af.dominant = FocusObject(
+            Symbol(get(dom, "source", "external")),
+            String(get(dom, "label", "")),
+            Float64(get(dom, "intensity", 0.0)),
+            Int(get(dom, "twf", 0)),
+        )
+    end
+    empty!(af.peripheral)
+    for od in get(d, "peripheral", [])
+        push!(af.peripheral, FocusObject(
+            Symbol(get(od, "source", "external")),
+            String(get(od, "label", "")),
+            Float64(get(od, "intensity", 0.0)),
+            Int(get(od, "twf", 0)),
+        ))
+    end
+    af.last_update_flash = Int(get(d, "last_flash", 0))
 end
 
 # --- AestheticSense -------------------------------------------------------
@@ -2091,6 +2241,7 @@ function psyche_save!(
     id::InnerDialogue = InnerDialogue(),
     cr::CuriosityRegistry = CuriosityRegistry(),
     aes::AestheticSense = AestheticSense(),
+    af::AttentionFocus = AttentionFocus(),
 )
     data=Dict(
         "narrative_gravity"=>ng_to_json(ng),
@@ -2110,6 +2261,7 @@ function psyche_save!(
         "inner_dialogue"=>id_to_json(id),
         "curiosity_registry"=>cr_to_json(cr),
         "aesthetic_sense"=>as_to_json(aes),
+        "attention_focus"=>af_to_json(af),
     )
     open(filepath, "w") do f
         ;
@@ -2146,6 +2298,7 @@ function psyche_load!(
     id::InnerDialogue = InnerDialogue(),
     cr::CuriosityRegistry = CuriosityRegistry(),
     aes::AestheticSense = AestheticSense(),
+    af::AttentionFocus = AttentionFocus(),
 )
     try
         raw=JSON3.read(read(filepath, String))
@@ -2172,6 +2325,7 @@ function psyche_load!(
         haskey(d, "inner_dialogue") && id_from_json!(id, d["inner_dialogue"])
         haskey(d, "curiosity_registry") && cr_from_json!(cr, d["curiosity_registry"])
         haskey(d, "aesthetic_sense") && as_from_json!(aes, d["aesthetic_sense"])
+        haskey(d, "attention_focus") && af_from_json!(af, d["attention_focus"])
         println("  [PSYCHE] Завантажено.")
     catch e
         ;
