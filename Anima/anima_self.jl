@@ -393,6 +393,8 @@ mutable struct AgencyLoop
     agency_confidence::Float64
     epistemic_self_confidence::Float64  # невизначеність щодо власної природи — реальний стан
     identity_threat::Float64            # накопичений тиск на ідентичність — зростає при атаках
+    self_discomfort::Float64            # розрив між тим якою маю бути і якою є (posterior vs prior, valence < 0)
+    self_coherence::Float64             # стан відповідає очікуванням
     ownership_history::BoundedQueue{Float64}
     agency_events::BoundedQueue{
         NamedTuple{(:flash, :intent, :ownership, :note),Tuple{Int,String,Float64,String}},
@@ -407,6 +409,8 @@ function AgencyLoop()
         0.5,
         0.5,
         0.75,
+        0.0,
+        0.0,
         0.0,
         BoundedQueue{Float64}(30),
         BoundedQueue{
@@ -445,6 +449,33 @@ function update_identity_threat!(
     else
         # Decay: повільно спадає якщо немає атаки
         al.identity_threat = clamp(al.identity_threat * 0.85, 0.0, 1.0)
+    end
+end
+
+# Метарівень: як Аніма відноситься до власного стану.
+# Порівнює posterior_mu (що стало) з prior_mu (що очікувалось) по VAD.
+# Відхилення з негативною валентністю → self_discomfort.
+# Відповідність → self_coherence.
+function update_self_relation!(
+    al::AgencyLoop,
+    prior_mu::Vector{Float64},
+    posterior_mu::Vector{Float64},
+    valence::Float64,
+)
+    vad_delta = norm(posterior_mu .- prior_mu)
+
+    # decay обох щоразу
+    al.self_discomfort = al.self_discomfort * 0.95
+    al.self_coherence  = al.self_coherence  * 0.95
+
+    if vad_delta > 0.15 && valence < 0.0
+        al.self_discomfort = clamp(al.self_discomfort + vad_delta * 0.12, 0.0, 1.0)
+        # при значному дискомфорті — підсилюємо identity_threat
+        if al.self_discomfort > 0.4
+            al.identity_threat = clamp(al.identity_threat + 0.04, 0.0, 1.0)
+        end
+    elseif vad_delta < 0.08
+        al.self_coherence = clamp(al.self_coherence + 0.06, 0.0, 1.0)
     end
 end
 
@@ -561,6 +592,8 @@ al_to_json(al::AgencyLoop) =
         "causal_ownership" => al.causal_ownership,
         "epistemic_self_confidence" => al.epistemic_self_confidence,
         "identity_threat" => al.identity_threat,
+        "self_discomfort" => al.self_discomfort,
+        "self_coherence" => al.self_coherence,
     )
 function al_from_json!(al::AgencyLoop, d::AbstractDict)
     al.agency_confidence = Float64(get(d, "agency_confidence", 0.5))
@@ -568,6 +601,8 @@ function al_from_json!(al::AgencyLoop, d::AbstractDict)
     al.causal_ownership = max(0.25, al.causal_ownership)
     al.epistemic_self_confidence = Float64(get(d, "epistemic_self_confidence", 0.75))
     al.identity_threat = Float64(get(d, "identity_threat", 0.0))
+    al.self_discomfort = Float64(get(d, "self_discomfort", 0.0))
+    al.self_coherence  = Float64(get(d, "self_coherence", 0.0))
 end
 
 # --- Self Update (головна функція) -----------------------------------------
