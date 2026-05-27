@@ -132,7 +132,7 @@ CREATE TABLE IF NOT EXISTS episodic_memory (
         "CREATE INDEX IF NOT EXISTS idx_episodic_emotion ON episodic_memory(emotion, weight DESC);",
     )
 
-    # Три простори пам'яті — додаємо якщо ще немає (міграція живої БД)
+    # Три простори пам'яті + source — додаємо якщо ще немає (міграція живої БД)
     for col_def in [
         ("som_arousal",    "REAL"),
         ("som_tension",    "REAL"),
@@ -146,6 +146,7 @@ CREATE TABLE IF NOT EXISTS episodic_memory (
         ("exi_pe",         "REAL"),
         ("exi_agency",     "REAL"),
         ("exi_trust",      "REAL"),
+        ("source",         "TEXT DEFAULT 'external'"),
     ]
         col, typ = col_def
         try
@@ -312,6 +313,7 @@ function memory_write_event!(
     hrv::Float64 = 0.5,
     agency_confidence::Float64 = 0.5,
     epistemic_trust::Float64 = 0.5,
+    source::String = "external",
 )
 
     α = 0.15
@@ -394,8 +396,8 @@ INSERT INTO episodic_memory
      prediction_error, self_impact, tension, phi, weight, resistance, signature,
      som_arousal, som_tension, som_intero, som_hrv,
      soc_valence, soc_impact, soc_resistance, soc_phi,
-     exi_phi, exi_pe, exi_agency, exi_trust)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     exi_phi, exi_pe, exi_agency, exi_trust, source)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """,
         (
             flash, ts, emotion,
@@ -416,6 +418,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             clamp(prediction_error, 0.0, 1.0),
             clamp(agency_confidence, 0.0, 1.0),
             clamp(epistemic_trust, 0.0, 1.0),
+            source,
         ),
     )
 
