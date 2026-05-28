@@ -75,14 +75,15 @@ end
 function _narrative_trajectory(db::SQLite.DB, last_n::Int = 80)::String
     rows = DBInterface.execute(
         db,
-        "SELECT emotion, COUNT(*) as cnt FROM episodic_memory ORDER BY flash DESC LIMIT ?",
+        "SELECT emotion, COUNT(*) as cnt FROM episodic_memory WHERE emotion IS NOT NULL GROUP BY emotion ORDER BY cnt DESC LIMIT ?",
         [last_n],
     )
     counts = Dict{String,Int}()
     for r in rows
+        ismissing(r.emotion) && continue
         e = String(r.emotion)
         isempty(e) && continue
-        counts[e] = get(counts, e, 0) + r.cnt
+        counts[e] = get(counts, e, 0) + Int(r.cnt)
     end
     isempty(counts) && return "невідома"
     total = sum(values(counts))
