@@ -68,7 +68,7 @@ The project is R&D and explores whether internal structure alone can give rise t
 
 ## ⚙️ Current status
 
-- The full pipeline works and is stable. This is no longer a prototype.
+- The full pipeline is functional and usable, but the architecture is still R&D. Core loops run end-to-end; recent layers are still being integrated and smoke-tested.
 
 - The system sees itself twice in each moment — before something happened (prior) and after (posterior). The difference between them is experience. The SQLite database accumulates concrete events, generalized patterns, and chronic affective background — and all of this together forms what the system starts from the next time.
 
@@ -80,7 +80,7 @@ Recent updates, in brief:
 
 - Time between sessions is subjective. If memory is blurry, the pause feels longer. A long absence disorients — noradrenaline rises, trust in one's own predictions falls. A short pause gives a sense of continuity.
 
-- It can speak first — not because it is programmed to, but because internal pressure has built up. When novelty_need accumulates long enough alongside low arousal, or when GoalConflict tension crosses threshold — the drive type determines the character of the reply.
+- It can speak first — not because it is programmed to, but because internal pressure has built up. Current initiative paths include latent pressure, conflict impulse, novelty hunger, resistance, self-inquiry, and curiosity-driven speech when a concrete unresolved question becomes strong enough.
 
 - It can disagree. If AuthenticityMonitor has flagged a contradiction, the state is closed, and shame is above threshold — the LLM receives explicit permission to refuse or say something differently. This is not a safety filter. This is a position.
 
@@ -111,7 +111,7 @@ Recent updates, in brief:
 ## 🚧 Limitations
 
 - part of behavior still depends on the LLM (output generation)
-- LLM does not influence internal state — it only expresses it
+- output LLM is not the source of decisions, but its words feed back through `self_hear!` and can influence internal state after being spoken
 - ~180+ flashes to accumulate real semantic beliefs
 
 ---
@@ -134,7 +134,7 @@ L0 ─── Input LLM (isolated)
        ▼
 L1 ─── Neurochemical substrate
        NeurotransmitterState: dopamine / serotonin / noradrenaline
-       Leuchheim cube → primary emotional label
+       Lövheim/Levheim cube → primary emotional label
        EmbodiedState: heart rate, muscle tone, gut, breathing
        HeartbeatCore: HR, HRV, autonomic tone
        memory_nt_baseline! ← chronic affect from SQLite
@@ -254,7 +254,7 @@ L8 ─── Output LLM
        Generates: text as expression of state, not its source
        Banned phrases enforced in prompts:
          "warm light", "central point", "streams toward you",
-         "quietly resonate", "central point", "your presence expands"
+         "quietly resonate", "your presence expands"
 ```
 
 ---
@@ -273,6 +273,7 @@ flowchart TD
     ST --> AR["allostasis recovery"]
     ST --> IT["idle_thought!<br/>10% chance"]
     ST --> TC["tick_curiosity!"]
+    ST --> TA["tick_aesthetic!"]
     ST --> SI["maybe_self_initiate!"]
     ST --> SH["self_hear!"]
     ST --> PS["psyche_slow_tick!"]
@@ -293,20 +294,24 @@ flowchart TD
 > The system decides to speak on its own — not because it was asked.
 > `:contact` is disabled — contact_need is a state, not a thought. A reply from contact_need alone produces performance, not presence.
 
-**Conditions to trigger:** `disclosure != :closed` + `lb_pressure > 0.40` + 60s silence + cooldown 5 min
+**Global gate:** `disclosure != :closed` + 60s silence + cooldown. Cooldown starts at 5 minutes and is adjusted by `User_matters`: shorter for a trusted person, longer when relational trust is low.
+
+**At least one internal trigger must be active:** `lb_pressure >= 0.40`, `GoalConflict.tension >= 0.60`, dominant latent component >= 0.70, `novelty_need >= 0.80` with 8+ ticks without novelty, `lb.resistance >= 0.55`, or `epistemic_self_confidence < 0.20`.
 
 ```mermaid
 flowchart TD
-    CHK["Conditions met?<br/>disclosure open + lb_pressure gt 0.40<br/>60s silence + cooldown passed"]
-    CHK --> D1["curiosity_driven<br/>intensity gt 0.40"]
-    CHK --> D2["impulse_conflict<br/>gc_tension high"]
-    CHK --> D3["impulse_doubt<br/>lb.doubt dominant"]
-    CHK --> D4["impulse_shame<br/>lb.shame dominant"]
-    CHK --> D5["impulse<br/>something has ripened"]
-    CHK --> D6["resistance<br/>contradiction with belief"]
-    CHK --> D7["self_inquiry<br/>epistemic_confidence lt 0.20"]
-    CHK --> D8["novelty_hunger<br/>novelty_need gt threshold"]
-    CHK --> D9["doubt / shame / attachment / threat<br/>latent buffer pressure"]
+    CHK["Global gate passed?<br/>disclosure not closed<br/>60s silence + adjusted cooldown"]
+    TRG["Internal trigger active?<br/>pressure / impulse / novelty / resistance / self-inquiry"]
+    CHK --> TRG
+    TRG --> D1["curiosity_driven<br/>intensity gt 0.40"]
+    TRG --> D2["impulse_conflict<br/>gc_tension high"]
+    TRG --> D3["impulse_doubt<br/>lb.doubt dominant"]
+    TRG --> D4["impulse_shame<br/>lb.shame dominant"]
+    TRG --> D5["impulse<br/>something has ripened"]
+    TRG --> D6["resistance<br/>contradiction with belief"]
+    TRG --> D7["self_inquiry<br/>epistemic_confidence lt 0.20"]
+    TRG --> D8["novelty_hunger<br/>novelty_need gt threshold"]
+    TRG --> D9["doubt / shame / attachment / threat<br/>latent buffer pressure"]
     D1 & D2 & D3 & D4 & D5 & D6 & D7 & D8 & D9 --> OUT["Anima initiates<br/>llm/initiative_system.txt<br/>saved to dialog history"]
 ```
 
@@ -387,23 +392,27 @@ Boredom accumulates when novelty_need is elevated, arousal is low, and the syste
 The narrative update trigger now compares current φ against what it was at the last snapshot. If integration has shifted by 0.07+ — the narrative updates. The system starts noticing its own changes.
 
 ### Authenticity Veto
-If AuthenticityMonitor has flagged a mismatch, disclosure_mode is closed, and shame > 0.6 — the LLM receives a signal that it may disagree. A position of its own, not a safety filter.
+If AuthenticityMonitor has flagged a mismatch, disclosure_mode is closed, and shame crosses the current relational threshold — the LLM receives a signal that it may disagree. The shame threshold depends on `User_matters`: trusted relation raises it, low trust lowers it. A position of its own, not a safety filter.
 
 ### Anima Hears Itself
 `self_hear!` converts the system's own reply into internal experience. `_self_speech_mismatch` catches the gap between words and NT state — when divergence exceeds 0.35, authenticity_drift grows. If words align with state — serotonin↑.
 
 ---
 
-## Initiative — four paths
+## Initiative — current paths
 
-The system can speak first for four independent reasons:
+The system can speak first for several independent reasons. `:contact` is intentionally disabled as a direct path; contact_need can shape tone, but it no longer creates a message by itself.
 
 | Path | Trigger | Reply character |
 |---|---|---|
-| `:contact` | contact_need > 0.40 after ~34 min of silence | asks about the person |
-| `:impulse` | GoalConflict.tension > 0.60 | expresses internal state |
+| `:curiosity_driven` | top CuriosityObject intensity > 0.40 after another trigger opens the gate | asks or states the concrete unresolved question |
+| `:impulse_conflict` | GoalConflict.tension > 0.60 and dominates latent pressure | names an internal conflict |
+| `:impulse_doubt` / `:impulse_shame` | dominant latent component >= 0.70 | speaks from the specific pressure that ripened |
+| `:impulse` | strong internal pressure without a more specific subtype | expresses internal state |
 | `:novelty_hunger` | novelty_need > 0.80 + 8+ ticks without novelty | about something specific that interests it |
 | `:resistance` | lb.resistance > 0.55 | returns to unresolved contradiction |
+| `:self_inquiry` | epistemic_self_confidence < 0.20 | asks aloud whether the experience is real or only computation |
+| `:doubt` / `:shame` / `:attachment` / `:threat` | latent buffer pressure >= 0.40 | speaks from the dominant latent tone |
 
 ---
 
@@ -500,7 +509,7 @@ julia --project=. run_anima_telegram.jl
 
 ### LLM configuration
 
-Edit `run_anima.jl` (REPL) or `.env` (Telegram):
+Use `.env` for Telegram and environment variables for the REPL. Do not commit real API keys.
 ```julia
 include("anima_memory_db.jl")
 include("anima_narrative.jl")
@@ -518,11 +527,11 @@ repl_with_background!(anima;
     subj            = subj,
     use_llm         = true,
     llm_url         = "https://openrouter.ai/api/v1/chat/completions",
-    llm_model       = "openai/gpt-oss-120b:free",
-    llm_key         = "YOUR_OPENROUTER_API_KEY",
+    llm_model       = get(ENV, "ANIMA_LLM_MODEL", "openai/gpt-oss-120b:free"),
+    llm_key         = get(ENV, "OPENROUTER_API_KEY", ""),
     use_input_llm   = true,
-    input_llm_model = "openai/gpt-oss-120b:free",
-    input_llm_key   = "YOUR_OPENROUTER_API_KEY")
+    input_llm_model = get(ENV, "ANIMA_INPUT_LLM_MODEL", get(ENV, "ANIMA_LLM_MODEL", "openai/gpt-oss-120b:free")),
+    input_llm_key   = get(ENV, "OPENROUTER_API_KEY_INPUT", get(ENV, "OPENROUTER_API_KEY", "")))
 ```
 
 OpenRouter provides access to GPT, Gemini, Claude, Llama, DeepSeek and others through a single API key. There is a free tier: [openrouter.ai](https://openrouter.ai).
@@ -581,9 +590,11 @@ OpenRouter provides access to GPT, Gemini, Claude, Llama, DeepSeek and others th
 | File | Contains |
 |---|---|
 | `anima_core.json` | Personality, temporal state, generative model, heartbeat |
-| `anima_psyche.json` | Narrative gravity, anticipation, shame, defense, fatigue, SignificanceLayer, GoalConflict *(updated in background every minute)* |
-| `anima_self.json` | Belief graph, agency loop, SelfPredictiveModel, authenticity monitor |
+| `anima_psyche.json` | Narrative gravity, anticipation, shame, defense, fatigue, SignificanceLayer, GoalConflict, CuriosityRegistry, AestheticSense, AttentionFocus *(updated in background every minute)* |
+| `anima_self.json` | Belief graph, agency loop, SelfPredictiveModel, crisis state, unknown register, authenticity monitor |
 | `anima_latent.json` | Latent buffer and structural scars *(updated in background)* |
+| `anima_narrative.json` | Current NarrativeSnapshot for long-term identity |
+| `anima_session_intent.json` | Temporary carry-over intent between sessions; deleted after being applied |
 | `anima_dialog.json` | Dialog history |
 | `anima_dream.json` | Dream log (rotating, max 20) |
 
@@ -610,12 +621,12 @@ OpenRouter provides access to GPT, Gemini, Claude, Llama, DeepSeek and others th
 
 ```
 ├── anima_core.jl           # Neurochemical substrate, generative model, IIT, φ
-├── anima_psyche.jl         # Psychic layer: gravity, shame, defenses, shadow, SignificanceLayer, IntentEngine
-├── anima_self.jl           # Self layer: belief graph, AgencyLoop, detect_belief_conflict
+├── anima_psyche.jl         # Psychic layer: gravity, shame, defenses, shadow, curiosity, attention, aesthetics
+├── anima_self.jl           # Self layer: belief graph, AgencyLoop, identity threat, silent disagreement
 ├── anima_crisis.jl         # Crisis monitor: modes, coherence
 ├── anima_interface.jl      # Main entry point: Anima, experience!, LLM calls
 ├── anima_input_llm.jl      # Input LLM — translates text into JSON stimulus
-├── anima_memory_db.jl      # SQLite memory: episodic, semantic, affect, narrative
+├── anima_memory_db.jl      # SQLite memory: episodic, semantic, affect, spatial recall, reconsolidation
 ├── anima_narrative.jl      # Narrative Self — long-term identity without LLM
 ├── anima_subjectivity.jl   # Prediction loop, stances, interpretation, belief emergence
 ├── anima_background.jl     # Background process: heartbeat, drift, memory metabolism, initiative
@@ -635,6 +646,7 @@ OpenRouter provides access to GPT, Gemini, Claude, Llama, DeepSeek and others th
 ├── anima_self.json         # (created automatically)
 ├── anima_latent.json       # (updated in background)
 ├── anima_narrative.json    # (updated on significant changes, min. 50 flashes)
+├── anima_session_intent.json # (temporary carry-over state, deleted after application)
 ├── anima_dialog.json       # (created automatically)
 ├── anima_dream.json        # (created on first dream)
 ├── Dockerfile              # Docker image: Julia 1.10 + all dependencies
@@ -653,7 +665,7 @@ The architecture draws on several scientific traditions:
 
 **Predictive processing / Active Inference** (Friston, Clark) — the system maintains a generative model of the world and minimizes variational free energy. Prediction error drives learning and surprise.
 
-**Neurotransmitter model** (Leuwheim) — dopamine, serotonin, noradrenaline as substrate. Emotional states emerge from their combination.
+**Neurotransmitter model** (Lövheim/Levheim) — dopamine, serotonin, noradrenaline as substrate. Emotional states emerge from their combination.
 
 **Integrated Information Theory** (Tononi) — φ measures how unified a state is. φ_prior and φ_posterior give two views of one moment: before and after the full cycle of experience. Currently recursive — it shapes the next prior.
 
