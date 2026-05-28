@@ -30,7 +30,7 @@ function can_dream(a::Anima, gap_seconds::Float64)::Bool
     hour = a.temporal.circadian_hour
     is_night = hour >= 0 && hour < 6
     long_gap = gap_seconds >= DREAM_GAP_MIN
-    not_disintegrated = a.crisis.current_mode != 2
+    not_disintegrated = Int(a.crisis.current_mode) != 2
     lucky = rand() < DREAM_PROB
 
     is_night && long_gap && not_disintegrated && lucky
