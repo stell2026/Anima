@@ -1543,7 +1543,7 @@ function recall_similar_states(
             mem.db,
             """
         SELECT id, flash, emotion, weight, phi, valence, arousal,
-               tension, prediction_error, self_impact
+               tension, prediction_error, self_impact, source
                $(use_spaces ? ", " * space_cols : "")
         FROM episodic_memory
         WHERE weight > 0.30 AND flash != ?
@@ -1661,18 +1661,29 @@ function recall_similar_states(
             (name = String(br.belief_name), conf = _fdb(br.confidence), dir = String(br.direction))
             for br in brows
         ]
+        _w   = _fdb(r.weight)
+        _sim = sim
         push!(
             result,
             (
-                flash = Int(r.flash),
-                emotion = em,
-                weight = _fdb(r.weight),
-                phi = _fdb(r.phi),
-                valence = _fdb(r.valence),
-                similarity = sim,
-                self_beliefs = self_beliefs,
+                flash           = Int(r.flash),
+                emotion         = em,
+                weight          = _w,
+                phi             = _fdb(r.phi),
+                valence         = _fdb(r.valence),
+                similarity      = _sim,
+                self_beliefs    = self_beliefs,
                 via_association = !(Int(r.flash) in direct_flashes),
-                space = space,
+                space           = space,
+                ignition        = (_sim * _w) > 0.65,
+                recalled_vad    = (
+                    arousal = _fdb(r.arousal),
+                    valence = _fdb(r.valence),
+                    tension = _fdb(r.tension),
+                    phi     = _fdb(r.phi),
+                    pe      = _fdb(r.prediction_error),
+                ),
+                recalled_source = ismissing(r.source) ? "external" : String(r.source),
             ),
         )
         length(result) >= top_n && break
