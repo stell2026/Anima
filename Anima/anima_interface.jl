@@ -2387,3 +2387,34 @@ function llm_async(
     end
     ch
 end
+
+# --- Cosine similarity між двома stimulus Dict ----------------------------
+
+# --- Counterfactual LLM виклик (двокроковий) ---------------------------------
+#
+# Крок 1: генерація нейтральної baseline відповіді — той самий user_msg,
+#         але без стану Аніми, без identity, без пам'яті.
+# Крок 2: LLM-суддя порівнює actual_reply vs neutral_reply і відповідає
+#         числом [0.0..1.0] — наскільки внутрішній стан вплинув на формулювання.
+#
+# causal_ownership = verdict судді.
+# Суддя оцінює НЕ зміст (що сказано), а як сказано: тон, вибір слів, структуру.
+
+# --- Causal ownership через відстань NT від базового стану ----------------
+#
+# Наскільки поточний NT стан відхилився від нейтрального (0.5, 0.5, 0.5).
+# Чим далі стан від базового — тим більше він потенційно вплинув на слова.
+# Детерміновано, без зовнішніх викликів.
+#
+# dist_max = sqrt(3 * 0.5^2) ≈ 0.866  (максимально можливе відхилення)
+
+const _NT_BASE = 0.5
+const _NT_DIST_MAX = sqrt(3 * 0.5^2)
+
+function compute_causal_ownership(nt::NeurotransmitterState)::Float64
+    d = Float64(nt.dopamine)      - _NT_BASE
+    s = Float64(nt.serotonin)     - _NT_BASE
+    n = Float64(nt.noradrenaline) - _NT_BASE
+    dist = sqrt(d^2 + s^2 + n^2)
+    clamp(dist / _NT_DIST_MAX, 0.0, 1.0)
+end
