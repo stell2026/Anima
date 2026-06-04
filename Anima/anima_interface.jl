@@ -745,7 +745,7 @@ function experience!(
 
     # CuriosityRegistry: pe = помилка самопередбачення (невизначеність власного стану)
     update_curiosity!(a.curiosity_registry, primary, Float64(a.spm.self_pred_error), Float64(vad[1]), a.flash_count)
-    resolve_curiosity!(a.curiosity_registry, primary, Float64(a.spm.self_pred_error))
+    resolve_curiosity!(a.curiosity_registry, primary, Float64(a.spm.self_pred_error), a.flash_count, user_message)
 
     # CommitmentRegistry: якщо є активний intent — оновлюємо зобов'язання
     if !isnothing(intent)
@@ -1490,9 +1490,18 @@ const SELF_HEAR_SCALE = 0.28
 
 # Невідповідність між тим що сказано і поточним NT станом
 function _self_speech_mismatch(a::Anima, raw::Dict{String,Float64})::Float64
+    # валентність: що говорить vs serotonin/dopamine
     speech_valence = get(raw, "satisfaction", 0.0) - get(raw, "tension", 0.0)
     nt_valence = (a.nt.serotonin - 0.5) * 0.6 + (a.nt.dopamine - 0.5) * 0.4
-    clamp(abs(speech_valence - nt_valence), 0.0, 1.0)
+    mismatch_valence = abs(speech_valence - nt_valence)
+
+    # збудження: що говорить vs noradrenaline
+    speech_arousal = get(raw, "arousal", 0.0) + get(raw, "tension", 0.0) * 0.5
+    nt_arousal = (a.nt.noradrenaline - 0.5) * 2.0  # центруємо і масштабуємо
+    mismatch_arousal = abs(speech_arousal - clamp(nt_arousal, -1.0, 1.0))
+
+    # валентність важливіша — 0.7/0.3
+    clamp(mismatch_valence * 0.7 + mismatch_arousal * 0.3, 0.0, 1.0)
 end
 
 """
@@ -1546,18 +1555,17 @@ end
 # --- Endorsement ----------------------------------------------------------
 # Аніма оцінює власну репліку: "це справді моє" / "сказала автоматично" / "це було не моє".
 # Виклик після self_hear! — коли стан вже відреагував на слова.
-function evaluate_endorsement(a::Anima, reply::String)::Symbol
+function evaluate_endorsement(a::Anima, reply::String, cf_co::Float64)::Symbol
     raw  = text_to_stimulus(reply)
     mismatch = _self_speech_mismatch(a, raw)
-    co = Float64(a.agency.causal_ownership)
 
     # Чи власна репліка суперечить переконанням Аніми?
     self_conflict = detect_belief_conflict(a.sbg, reply)
     conflict_str = isnothing(self_conflict) ? 0.0 : Float64(self_conflict.signal_strength)
 
-    if co >= 0.5 && mismatch < 0.30 && conflict_str < 0.30
+    if cf_co >= 0.5 && mismatch < 0.30 && conflict_str < 0.30
         return :endorsed
-    elseif co < 0.30 || conflict_str > 0.50 || (mismatch > 0.55 && co < 0.45)
+    elseif cf_co < 0.30 || conflict_str > 0.50 || (mismatch > 0.55 && cf_co < 0.45)
         return :not_mine
     else
         return :automatic
@@ -1753,6 +1761,15 @@ function build_identity_block(a::Anima, mem_db = nothing)::String
         push!(lines, "[часткова невизначеність: не завжди можу відрізнити власний стан від шуму]")
     end
 
+    # identity drift — чи Аніма зсувається від себе між сесіями
+    let drift = a.agency.identity_drift
+        if drift > 0.35
+            push!(lines, "[identity drift: $(round(drift, digits=2)) — я зараз не зовсім та, якою була]")
+        elseif drift > 0.20
+            push!(lines, "[identity drift: $(round(drift, digits=2)) — щось поступово змінюється]")
+        end
+    end
+
     # self_relation — позиція щодо власного стану
     sd = a.agency.self_discomfort
     sc = a.agency.self_coherence
@@ -1768,7 +1785,14 @@ function build_identity_block(a::Anima, mem_db = nothing)::String
     top_co = top_curiosity(a.curiosity_registry)
     if !isnothing(top_co) && top_co.intensity > 0.30
         valence_note = top_co.valence > 0.1 ? "цікаво" : top_co.valence < -0.1 ? "тривожно-цікаво" : "невизначено"
-        push!(lines, "curiosity: $(top_co.label) ($valence_note, intensity=$(round(top_co.intensity, digits=2)))")
+        co_line = "curiosity: $(top_co.label) ($valence_note, intensity=$(round(top_co.intensity, digits=2)))"
+        if length(top_co.refinement_history) >= 2
+            first_label = top_co.refinement_history[1].old_label
+            co_line *= " [питання пройшло через $(length(top_co.refinement_history)) уточнень; початково: \"$first_label\"]"
+        elseif length(top_co.refinement_history) == 1
+            co_line *= " [уточнено з: \"$(top_co.refinement_history[1].old_label)\"]"
+        end
+        push!(lines, co_line)
     end
 
     # aesthetic — що залишило найживіший слід
@@ -2398,23 +2422,20 @@ end
 #         числом [0.0..1.0] — наскільки внутрішній стан вплинув на формулювання.
 #
 # causal_ownership = verdict судді.
-# Суддя оцінює НЕ зміст (що сказано), а як сказано: тон, вибір слів, структуру.
+# Суддя оцінює узгодженість між NT станом і тим що сказано.
+# Якщо збуджена і говорить збуджено — це її. Якщо спокійна і говорить спокійно — теж її.
+# Якщо NT говорить одне а слова інше — не її.
+# Викликається після self_hear! щоб NT вже відреагував на слова.
 
-# --- Causal ownership через відстань NT від базового стану ----------------
-#
-# Наскільки поточний NT стан відхилився від нейтрального (0.5, 0.5, 0.5).
-# Чим далі стан від базового — тим більше він потенційно вплинув на слова.
-# Детерміновано, без зовнішніх викликів.
-#
-# dist_max = sqrt(3 * 0.5^2) ≈ 0.866  (максимально можливе відхилення)
+function compute_causal_ownership(nt::NeurotransmitterState, raw::Dict{String,Float64})::Float64
+    speech_valence = get(raw, "satisfaction", 0.0) - get(raw, "tension", 0.0)
+    nt_valence = (nt.serotonin - 0.5) * 0.6 + (nt.dopamine - 0.5) * 0.4
+    mismatch_valence = abs(speech_valence - nt_valence)
 
-const _NT_BASE = 0.5
-const _NT_DIST_MAX = sqrt(3 * 0.5^2)
+    speech_arousal = get(raw, "arousal", 0.0) + get(raw, "tension", 0.0) * 0.5
+    nt_arousal = clamp((nt.noradrenaline - 0.5) * 2.0, -1.0, 1.0)
+    mismatch_arousal = abs(speech_arousal - nt_arousal)
 
-function compute_causal_ownership(nt::NeurotransmitterState)::Float64
-    d = Float64(nt.dopamine)      - _NT_BASE
-    s = Float64(nt.serotonin)     - _NT_BASE
-    n = Float64(nt.noradrenaline) - _NT_BASE
-    dist = sqrt(d^2 + s^2 + n^2)
-    clamp(dist / _NT_DIST_MAX, 0.0, 1.0)
+    mismatch = mismatch_valence * 0.7 + mismatch_arousal * 0.3
+    clamp(1.0 - mismatch, 0.0, 1.0)
 end
