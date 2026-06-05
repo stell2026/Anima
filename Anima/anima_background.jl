@@ -1267,6 +1267,14 @@ function repl_with_background!(
                             @warn "[ENDORSE] $e"
                         end
                     end
+                    # Вартість вибору
+                    apply_choice_cost!(
+                        a.nt,
+                        a.agency,
+                        a.inner_dialogue.disclosure_mode,
+                        a.shadow_registry.pressure,
+                        pending_is_initiative,
+                    )
                     # Genuine Dialogue: пендинг висловлено — очищаємо
                     !isempty(a.inner_dialogue.pending_thought) &&
                         consume_pending_thought!(a.inner_dialogue)
@@ -1308,6 +1316,17 @@ function repl_with_background!(
                                         _val,
                                         _disc,
                                     )
+                                    try
+                                        update_other_model!(
+                                            bg.mem,
+                                            a.flash_count,
+                                            _em,
+                                            Float64(a.goal_conflict.tension),
+                                            _disc,
+                                        )
+                                    catch e
+                                        @warn "[OTHER] model update: $e"
+                                    end
                                 end
                             end
                         catch e
