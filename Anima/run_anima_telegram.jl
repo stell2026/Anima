@@ -23,6 +23,7 @@ function load_dotenv!(path::String)
 end
 
 load_dotenv!(joinpath(@__DIR__, ".env"))
+load_dotenv!(joinpath(dirname(@__DIR__), ".env"))
 
 include("anima_memory_db.jl")
 include("anima_narrative.jl")
@@ -32,8 +33,25 @@ include("anima_dream.jl")
 include("anima_background.jl")
 include("anima_telegram.jl")
 
-anima = Anima()
-mem   = MemoryDB()
+function anima_state_path(filename::String)
+    dir = strip(get(ENV, "ANIMA_STATE_DIR", @__DIR__))
+    isempty(dir) && (dir = @__DIR__)
+    dir = isabspath(dir) ? dir : joinpath(@__DIR__, dir)
+    isdir(dir) || mkpath(dir)
+    joinpath(dir, filename)
+end
+
+function anima_memory_path()
+    path = strip(get(ENV, "ANIMA_MEMORY_DB", ""))
+    isempty(path) && return joinpath(@__DIR__, "memory", "anima.db")
+    isabspath(path) ? path : joinpath(@__DIR__, path)
+end
+
+anima = Anima(
+    core_mem_path = anima_state_path("anima_core.json"),
+    psyche_mem_path = anima_state_path("anima_psyche.json"),
+)
+mem   = MemoryDB(anima_memory_path())
 subj  = SubjectivityEngine(mem)
 
 telegram_loop!(

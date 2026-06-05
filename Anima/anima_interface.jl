@@ -130,6 +130,15 @@ function am_from_json!(am::AuthenticityMonitor, d::AbstractDict)
     am.narrative_overreach = Float64(get(d, "narrative_overreach", 0.0))
 end
 
+function anima_state_file(psyche_mem_path::String, stem::String)::String
+    dir = dirname(psyche_mem_path)
+    base = basename(psyche_mem_path)
+    filename = occursin("psyche", base) ?
+        replace(base, "psyche" => stem) :
+        "anima_$(stem).json"
+    joinpath(dir, filename)
+end
+
 # --- Anima – головна структура ---------------------------------------
 mutable struct Anima
     # Core
@@ -312,7 +321,7 @@ function Anima(;
         a.aesthetic_sense,
         a.attention_focus,
     )
-    _self_path = replace(psyche_mem_path, "psyche" => "self")
+    _self_path = anima_state_file(psyche_mem_path, "self")
     if isfile(_self_path)
         try
             _raw = JSON3.read(read(_self_path, String))
@@ -351,7 +360,7 @@ function Anima(;
         end
     end
     # Завантаження anima_latent.json
-    _latent_path = replace(psyche_mem_path, "psyche" => "latent")
+    _latent_path = anima_state_file(psyche_mem_path, "latent")
     if isfile(_latent_path)
         try
             _raw = JSON3.read(read(_latent_path, String))
@@ -366,7 +375,7 @@ function Anima(;
         end
     end
 
-    _narrative_path = replace(psyche_mem_path, "psyche" => "narrative")
+    _narrative_path = anima_state_file(psyche_mem_path, "narrative")
     a.narrative_snap = load_narrative(_narrative_path)
     init_session!(a.temporal)
     apply_to_nt!(a.temporal, a.nt)
@@ -419,7 +428,7 @@ function save!(a::Anima; summary = "", verbose = false)
         a.aesthetic_sense,
         a.attention_focus,
     )
-    self_path = replace(a.psyche_mem_path, "psyche" => "self")
+    self_path = anima_state_file(a.psyche_mem_path, "self")
     self_data = Dict(
         "sbg"=>sbg_to_json(a.sbg),
         "spm"=>spm_to_json(a.spm),
@@ -439,6 +448,8 @@ function save!(a::Anima; summary = "", verbose = false)
             "drive_history" => collect(a.intent_engine.drive_history),
         ),
     )
+    self_dir = dirname(self_path)
+    isempty(self_dir) || isdir(self_dir) || mkpath(self_dir)
     open(self_path, "w") do f
         ;
         JSON3.write(f, self_data);
@@ -446,7 +457,7 @@ function save!(a::Anima; summary = "", verbose = false)
     save_session_geometry!(a.isc, belief_geometry(a.sbg))
 
     # session_intent — що Аніма несе між сесіями
-    intent_path = replace(a.psyche_mem_path, "psyche" => "session_intent")
+    intent_path = anima_state_file(a.psyche_mem_path, "session_intent")
     top_co = top_curiosity(a.curiosity_registry)
     curiosity_active = !isnothing(top_co) && top_co.intensity > 0.4
     gc_active = a.goal_conflict.tension > 0.35
@@ -470,6 +481,8 @@ function save!(a::Anima; summary = "", verbose = false)
             "signal"      => intent_signal,
             "saved_flash" => a.flash_count,
         )
+        intent_dir = dirname(intent_path)
+        isempty(intent_dir) || isdir(intent_dir) || mkpath(intent_dir)
         open(intent_path, "w") do f
             JSON3.write(f, intent_data)
         end
@@ -1003,7 +1016,7 @@ function experience!(
 
     # Narrative self: перевіряємо тригер оновлення
     if !isnothing(mem)
-        let _nfp = replace(a.psyche_mem_path, "psyche" => "narrative")
+        let _nfp = anima_state_file(a.psyche_mem_path, "narrative")
             _nstab = self_snap.sbg.attractor_stability
             _nfing = _belief_fingerprint(a.sbg)
             if should_update_narrative(

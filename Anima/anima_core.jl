@@ -1004,10 +1004,12 @@ function core_save!(
     ii::InteroceptiveInference,
     ea::ExistentialAnchor,
     flash_count::Int,
-)
+    )
     cm.total_flashes = flash_count
     push!(cm.sessions, (date = now_str(), flash_end = flash_count))
     length(cm.sessions)>100 && (cm.sessions=cm.sessions[(end-99):end])
+    dir = dirname(cm.filepath)
+    isempty(dir) || isdir(dir) || mkpath(dir)
     data = Dict(
         "version"=>"anima_v13_core",
         "created_at"=>cm.created_at,

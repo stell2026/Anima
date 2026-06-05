@@ -2476,6 +2476,8 @@ function psyche_save!(
     aes::AestheticSense = AestheticSense(),
     af::AttentionFocus = AttentionFocus(),
 )
+    dir = dirname(filepath)
+    isempty(dir) || isdir(dir) || mkpath(dir)
     data=Dict(
         "narrative_gravity"=>ng_to_json(ng),
         "anticipatory"=>ac_to_json(ac),
@@ -2535,6 +2537,10 @@ function psyche_load!(
     aes::AestheticSense = AestheticSense(),
     af::AttentionFocus = AttentionFocus(),
 )
+    if !isfile(filepath)
+        println("  [PSYCHE] Новий psyche стан.")
+        return
+    end
     try
         raw=JSON3.read(read(filepath, String))
         d=json3_to_dict(raw)

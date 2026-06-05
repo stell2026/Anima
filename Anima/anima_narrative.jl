@@ -228,9 +228,13 @@ VALUES (?,?,?,?,?,?,?,?,?,?)
         "stability" => snap.stability,
         "belief_fingerprint" => snap.belief_fingerprint,
     )
-    open(json_path, "w") do f
+    dir = dirname(json_path)
+    isempty(dir) || isdir(dir) || mkpath(dir)
+    tmp = json_path * ".tmp"
+    open(tmp, "w") do f
         JSON3.write(f, d)
     end
+    mv(tmp, json_path; force = true)
 end
 
 # --- Завантаження поточного стану з JSON --------------------------------------

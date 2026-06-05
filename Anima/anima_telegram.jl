@@ -187,7 +187,7 @@ function telegram_loop!(
         end
     end
 
-    dialog_path = replace(a.psyche_mem_path, "psyche" => "dialog")
+    dialog_path = anima_state_file(a.psyche_mem_path, "dialog")
     history = dialog_load(dialog_path)
     history_lock = ReentrantLock()
 

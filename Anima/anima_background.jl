@@ -883,7 +883,7 @@ function background_save!(a::Anima)
     )
     atomic_write(a.core_mem.filepath, core_data)
 
-    self_path = replace(a.psyche_mem_path, "psyche" => "self")
+    self_path = anima_state_file(a.psyche_mem_path, "self")
     self_data = Dict(
         "sbg" => sbg_to_json(a.sbg),
         "spm" => spm_to_json(a.spm),
@@ -895,7 +895,7 @@ function background_save!(a::Anima)
     )
     atomic_write(self_path, self_data)
 
-    lb_path = replace(a.psyche_mem_path, "psyche" => "latent")
+    lb_path = anima_state_file(a.psyche_mem_path, "latent")
     atomic_write(
         lb_path,
         Dict(
@@ -999,7 +999,7 @@ function start_background!(
         )
 
         # session_intent — завантажуємо що Аніма несла між сесіями
-        _intent_path = replace(a.psyche_mem_path, "psyche" => "session_intent")
+        _intent_path = anima_state_file(a.psyche_mem_path, "session_intent")
         if isfile(_intent_path)
             try
                 _intent = JSON3.read(read(_intent_path, String), Dict{String,Any})
@@ -1186,7 +1186,7 @@ function repl_with_background!(
         end
     end
 
-    dialog_path = replace(a.psyche_mem_path, "psyche" => "dialog")
+    dialog_path = anima_state_file(a.psyche_mem_path, "dialog")
     history = dialog_load(dialog_path)
     !isempty(history) && println("  [DIALOG] Завантажено $(length(history)) реплік.\n")
 

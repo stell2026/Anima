@@ -8,7 +8,16 @@ const DREAM_PROB = 0.05   # 5% шанс на slow_tick
 const DREAM_GAP_MIN = 1800.0 # мінімум 30хв без взаємодії
 const DREAM_NT_SCALE = 0.25   # NT вплив сну — 25% від реального досвіду
 const DREAM_LOG_MAX = 20
-const DREAM_LOG_PATH = "anima_dream.json"
+
+function _default_dream_log_path()
+    dir = strip(get(ENV, "ANIMA_STATE_DIR", ""))
+    isempty(dir) && return joinpath(@__DIR__, "anima_dream.json")
+    dir = isabspath(dir) ? dir : joinpath(@__DIR__, dir)
+    isdir(dir) || mkpath(dir)
+    joinpath(dir, "anima_dream.json")
+end
+
+const DREAM_LOG_PATH = _default_dream_log_path()
 
 # --- Dream Record ----------------------------------------------------------
 
@@ -273,6 +282,8 @@ function save_dream!(record::DreamRecord, path::String = DREAM_LOG_PATH)
         existing = existing[(end-DREAM_LOG_MAX+1):end]
     end
     try
+        dir = dirname(path)
+        isempty(dir) || isdir(dir) || mkpath(dir)
         tmp = path * ".tmp"
         open(tmp, "w") do f
             ;
