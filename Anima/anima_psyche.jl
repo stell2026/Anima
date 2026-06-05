@@ -1800,6 +1800,27 @@ function apply_shadow_pressure!(
     (serotonin_delta, tension_delta)
 end
 
+# Вартість вибору — кожен значущий вибір залишає слід в NT.
+# Не покарання і не нагорода — фізіологічна реальність витрати.
+function apply_choice_cost!(
+    nt,
+    agency,
+    disclosure::Symbol,
+    shadow_pressure::Float64,
+    is_initiative::Bool,
+)
+    if disclosure == :open
+        nt.serotonin = clamp(nt.serotonin - 0.02, 0.0, 1.0)
+        agency.causal_ownership = clamp(agency.causal_ownership + 0.03, 0.0, 1.0)
+    elseif disclosure in (:guarded, :closed) && shadow_pressure > 0.4
+        nt.noradrenaline = clamp(nt.noradrenaline + 0.025, 0.0, 1.0)
+    end
+
+    if is_initiative
+        nt.dopamine = clamp(nt.dopamine - 0.03, 0.0, 1.0)
+    end
+end
+
 sr_to_json(sr::ShadowRegistry) = Dict(
     "pressure" => sr.pressure,
     "total_suppressed" => sr.total_suppressed,
