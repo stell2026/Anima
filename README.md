@@ -341,6 +341,7 @@ flowchart TD
 | `memory_links` | Associative network (`via_association ~`) |
 | `emerged_beliefs` | Subjectivity engine belief candidates |
 | `narrative_history` | NarrativeSnapshot chronology |
+| `other_model` | Descriptive model of the interlocutor — accumulated patterns (topic frequency, tension events, open exchanges); not predictive |
 
 **Memory Reconsolidation:** `sim > 0.88` + `weight < 0.6` → `weight ±0.05` toward current φ
 
