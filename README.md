@@ -342,6 +342,7 @@ flowchart TD
 | `emerged_beliefs` | Subjectivity engine belief candidates |
 | `narrative_history` | NarrativeSnapshot chronology |
 | `other_model` | Descriptive model of the interlocutor — accumulated patterns (topic frequency, tension events, open exchanges); not predictive |
+| `audit_log` | SubjectivityAudit log — five causal questions per flash, audit_score, causal_ownership, endorsed |
 
 **Memory Reconsolidation:** `sim > 0.88` + `weight < 0.6` → `weight ±0.05` toward current φ
 
@@ -367,6 +368,9 @@ DREAM (anima_dream.jl)
 ---
 
 ## ✨ What's new
+
+### SubjectivityAudit — Technical Verdict on Each Flash
+After each LLM reply, `compute_audit` answers five causal questions about what just happened: Was the internal state causally necessary for this reply? Did memory actually matter (ignition / resonance)? Was something the system's own at stake (identity pressure, self-discomfort, goal conflict)? Did something change irreversibly (φ_delta > 0.05 or `:endorsed`)? Does the system recognize the reply as its own? The result — `audit_score` from 0.0 to 1.0 — is written to `audit_log` in SQLite after every flash. A chronically low score is a signal: the architecture is wide but not deep. `:audit` in the REPL shows the average and per-question rates over the last 20 flashes.
 
 ### Causal Ownership — Authorship as Coherence
 `causal_ownership` is now computed from agreement between NT state and speech — not distance from a neutral baseline. Valence channel (serotonin/dopamine vs satisfaction/tension, weight 0.7) plus arousal channel (noradrenaline vs speech arousal, weight 0.3). A calm reply from a calm state is just as owned as an intense reply from an intense state. What lowers authorship is mismatch — saying one thing while the body holds another. `evaluate_endorsement` now receives the fresh per-reply `cf_co` directly, not the smoothed historical average. Endorsement judges the current reply, not the accumulated past.
@@ -567,6 +571,7 @@ OpenRouter provides access to GPT, Gemini, Claude, Llama, DeepSeek and others th
 | `:dreams` | Recent dreams: narrative, source, φ, nt_delta |
 | `:history` | Last 10 dialog turns |
 | `:clearhist` | Clear dialog history |
+| `:audit` | SubjectivityAudit summary: avg score and per-question rates over last 20 flashes |
 | `:save` | Force save state to disk |
 | `:quit` | Save and exit |
 
@@ -603,6 +608,7 @@ OpenRouter provides access to GPT, Gemini, Claude, Llama, DeepSeek and others th
 | `pattern_candidates` | Candidates for new beliefs (not yet confirmed) |
 | `emerged_beliefs` | Beliefs the system generated from experience on its own |
 | `interpretation_history` | Lens through which situations were read |
+| `audit_log` | SubjectivityAudit — five causal questions per flash with scores; chronic low score signals the architecture is wide but not deep |
 
 ---
 
@@ -618,6 +624,7 @@ OpenRouter provides access to GPT, Gemini, Claude, Llama, DeepSeek and others th
 ├── anima_memory_db.jl      # SQLite memory: episodic, semantic, affect, spatial recall, reconsolidation
 ├── anima_narrative.jl      # Narrative Self — long-term identity without LLM
 ├── anima_subjectivity.jl   # Prediction loop, stances, interpretation, belief emergence
+├── anima_audit.jl          # SubjectivityAudit — causal scoring per flash, audit_log SQLite
 ├── anima_background.jl     # Background process: heartbeat, drift, memory metabolism, initiative
 ├── anima_dream.jl          # Dream generation — processing unresolved experience during sleep
 ├── anima_telegram.jl       # Telegram bridge — bot loop replacing the terminal REPL
