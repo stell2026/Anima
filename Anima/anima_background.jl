@@ -24,6 +24,8 @@
 # Потребує: anima_interface.jl
 # Опціонально: anima_memory_db.jl (якщо передано mem=)
 
+include(joinpath(@__DIR__, "anima_audit.jl"))
+
 # --- Константи ------------------------------------------------------------
 
 const SLOW_TICK_INTERVAL = 60.0   # секунд між повільними тіками
@@ -1206,7 +1208,7 @@ function repl_with_background!(
     subj_label = !isnothing(subj) ? " | 🧬 суб'єктність" : ""
     println("  ❤️ серце б'ється$(isnothing(mem) ? "" : " | 🧠 пам'ять активна")$subj_label")
     println(
-        "  :bg :bgstop :bgstart :memory :subj :state :vfe :self :crisis :hb :gravity :anchor :solom :dreams :history :clearhist :quit",
+        "  :bg :bgstop :bgstart :memory :subj :state :vfe :self :crisis :hb :gravity :anchor :solom :dreams :history :clearhist :audit :quit",
     )
     println("═"^70 * "\n")
 
@@ -1226,6 +1228,8 @@ function repl_with_background!(
     pending_llm = nothing
     pending_user_msg = ""
     pending_is_initiative = false
+    _last_r = nothing           # результат останнього experience! для аудиту
+    _last_had_ignition = false  # чи спрацював ignition на останньому флеші
 
     try
         while true
@@ -1265,6 +1269,20 @@ function repl_with_background!(
                             @info "[ENDORSE] $(a.last_endorsement) flash=$(a.flash_count) co=$(round(cf_co,digits=2))"
                         catch e
                             @warn "[ENDORSE] $e"
+                        end
+                    end
+                    # SubjectivityAudit: технічний суд — чи стан справді причинний
+                    if !isnothing(bg.mem) && !isnothing(_last_r)
+                        try
+                            _audit = compute_audit(
+                                a, _last_r;
+                                had_ignition      = _last_had_ignition,
+                                had_mem_resonance = _last_had_ignition,
+                            )
+                            save_audit!(bg.mem.db, _audit)
+                            @info "[AUDIT] score=$(round(_audit.audit_score,digits=2)) co=$(round(_audit.causal_ownership,digits=2)) endorsed=$(_audit.endorsed)"
+                        catch e
+                            @warn "[AUDIT] $e"
                         end
                     end
                     # Вартість вибору
@@ -1506,6 +1524,25 @@ $(dominant_note)"""
                     )
                     println()
                 end
+            elseif cmd == ":audit"
+                if isnothing(mem)
+                    println("  [AUDIT] Пам'ять не підключена.")
+                else
+                    try
+                        s = audit_summary(mem.db; last_n = 20)
+                        if s.n == 0
+                            println("  [AUDIT] Даних ще немає.")
+                        else
+                            println("\n  [AUDIT] Останні $(s.n) флешів:")
+                            println("  score=$(s.avg_score)  causal=$(s.causal_rate)  mem_dep=$(s.memory_dep_rate)")
+                            println("  stake=$(s.stake_rate)  irrev=$(s.irreversible_rate)  recognized=$(s.recognized_rate)")
+                            println("  → $(s.note)")
+                            println()
+                        end
+                    catch e
+                        println("  [AUDIT] помилка: $e")
+                    end
+                end
             elseif cmd == ":quit"
                 if !isnothing(mem)
                     try
@@ -1710,6 +1747,10 @@ $(dominant_note)"""
                 _prev_body_gut      = a.body.gut_feeling
                 _prev_body_hr       = a.body.heart_rate
                 r = experience!(a, stim; user_message = cmd, mem = mem)
+                _last_r = r
+                # ignition спрацьовує всередині experience! і логується через @info
+                # тут ловимо через mem_resonance > 0 як проксі
+                _last_had_ignition = r.mem_resonance > 0
                 dialog_to_belief_signal!(a.sbg, cmd, a.flash_count)
                 # Genuine Dialogue: детекція уникнутих тем
                 # Якщо система закрита під час розмови — тема обходиться стороною
