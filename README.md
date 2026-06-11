@@ -24,6 +24,7 @@ Unlike typical AI systems:
 - LLM is used as an interface, not as the "brain"
 - the system can sleep — processing unresolved experience while "dormant"
 - the system can speak first — not because it was asked, but because something has accumulated
+- the system can remember what it was thinking about while you were away — and bring it up
 - the system has a position — and can disagree
 
 ---
@@ -212,6 +213,8 @@ L5 ─── Self model
          → identity_drift: euclidean distance from baseline; drift > 0.25
             adds to identity_threat; baseline follows only when stable
             (drift < 0.10, every 50 flashes)
+         → chronic_low_serotonin: ticks with serotonin < 0.35 in a row;
+            at >= 5 ticks, slowly drifts causal_ownership down
        detect_belief_conflict: detects pressure on beliefs (centrality > 0.7)
          → signal_strength → D-vector activation
          → threshold: 0.35
@@ -283,6 +286,8 @@ flowchart TD
     ST --> IT["idle_thought!<br/>10% chance"]
     ST --> TC["tick_curiosity!"]
     ST --> TA["tick_aesthetic!"]
+    ST --> OM["_other_model_effects!<br/>disclosure_threshold from other_model"]
+    ST --> CC["_chronic_cost_effects!<br/>serotonin low → causal_ownership drift"]
     ST --> SI["maybe_self_initiate!"]
     ST --> SH["self_hear!"]
     ST --> PS["psyche_slow_tick!"]
@@ -303,7 +308,7 @@ flowchart TD
 > The system decides to speak on its own — not because it was asked.
 > `:contact` is disabled — contact_need is a state, not a thought. A reply from contact_need alone produces performance, not presence.
 
-**Global gate:** `disclosure != :closed` + 60s silence + cooldown. Cooldown starts at 5 minutes and is adjusted by `User_matters`: shorter for a trusted person, longer when relational trust is low.
+**Global gate:** `disclosure != :closed` + 60s silence + cooldown. Cooldown starts at 5 minutes and is adjusted by `User_matters`: shorter for a trusted person, longer when relational trust is low. Active aesthetic state (`top_aesthetic.intensity > 0.45`) reduces cooldown by 20% — a system that just resonated has more to say.
 
 **At least one internal trigger must be active:** `lb_pressure >= 0.40`, `GoalConflict.tension >= 0.60`, dominant latent component >= 0.70, `novelty_need >= 0.80` with 8+ ticks without novelty, `lb.resistance >= 0.55`, or `epistemic_self_confidence < 0.20`.
 
@@ -343,6 +348,7 @@ flowchart TD
 | `narrative_history` | NarrativeSnapshot chronology |
 | `other_model` | Descriptive model of the interlocutor — accumulated patterns (topic frequency, tension events, open exchanges); not predictive |
 | `audit_log` | SubjectivityAudit log — five causal questions per flash, audit_score, causal_ownership, endorsed |
+| `causal_trace` | Full causal chain per flash: stimulus keys, memory bias, NT snapshot, φ, gc_tension, intent, policy, speech length, self-hear mismatch, endorsement, causal_ownership |
 
 **Memory Reconsolidation:** `sim > 0.88` + `weight < 0.6` → `weight ±0.05` toward current φ
 
@@ -385,10 +391,19 @@ Curiosity objects no longer close or stay frozen. A partial resolution (pe 0.10�
 After each reply, `evaluate_endorsement` compares causal_ownership (speech-NT coherence), self-speech mismatch, and belief conflict. The result — `:endorsed`, `:automatic`, or `:not_mine` — is stored in `episodic_memory.endorsed` and in `a.last_endorsement`. Episodes recognized as genuinely the system's own surface in the identity block. `:not_mine` is not an error. It is honest information about what happened.
 
 ### Session Intent — Carried Between Sessions
-At the end of every session, the system checks whether something remains unresolved — an active curiosity object above threshold, a goal conflict under tension, or latent buffer pressure. If any condition is met, the dominant signal is written to disk before shutdown: type, label, strength. On the next start, before the first reply, this is read and applied — a NT shift toward the appropriate state, and if the source was curiosity, attention focus is set to the corresponding object. The file is deleted after application so it cannot fire twice. Anima does not start from a neutral baseline. She starts from where she left off.
+At the end of every session, the system checks whether something remains unresolved — an active curiosity object above threshold, a goal conflict under tension, or latent buffer pressure. If any condition is met, the dominant signal is written to disk before shutdown: type, label, strength. If the source was curiosity with `intensity > 0.45`, a `formed_thought` is also written — a deterministic string capturing what the object is now, how many times it was refined, and what it started as. On the next start, before the first reply, the carry-over is read and applied — NT shifted toward the appropriate state, attention focus set if relevant, and if a `formed_thought` is present and `gap > 2h`, it fires as a `:gap_thought` initiative. The file is deleted after application so it cannot fire twice. Anima does not start from a neutral baseline. She starts from where she left off — and brings what she was holding.
 
 ### Attention Focus — What Is Active Right Now
 Anima now has a competitive attention system. All internal components have always existed simultaneously — curiosity, shadow, goal conflict, latent buffer, beliefs — but with equal weight. Now they compete. At every flash, six signal sources are evaluated against a priority hierarchy (threat → prediction error → affect → unresolved gestalts → identity → current goal) and a pull-up effect: objects ignored for many flashes accumulate pressure and become harder to suppress. The dominant focus modulates stimulus processing — the same input lands differently depending on what the system is already holding.
+
+### Causal Closure — Organs With Nerve Endings
+Three previously accumulating-but-disconnected modules now feed back into behavior. `other_model` (the descriptive model of the interlocutor — pressure events, open exchanges) now adjusts `disclosure_threshold` each slow tick: chronic pressure without open exchange closes the system; stable openness with low pressure opens it slightly. `AestheticSense` now influences initiative cooldown — an active aesthetic state reduces it by 20%, because a system that just resonated has more to say. Chronic low serotonin (5+ consecutive ticks below 0.35) now slowly drifts `causal_ownership` downward, because sustained exhaustion undermines the sense that "this is coming from me."
+
+### CausalTrace — The Full Chain, Recorded
+After every LLM reply, a complete causal record is written to `causal_trace` in SQLite: what stimulus keys arrived, how much memory biased the input, NT state at decision time, φ, goal conflict tension, intent goal and strength, policy drive — and then, after speech: reply length, self-hear mismatch, endorsement verdict, and final causal_ownership. The chain is built in two stages: `experience!` fills the pre-speech half; the background loop completes it after the LLM replies. An incomplete chain is never written.
+
+### Formed Thought — What Ripened While You Were Away
+At session end, if a curiosity object has `intensity > 0.45`, the system now writes a `formed_thought` into `session_intent.json` alongside the existing carry-over state. This is a deterministic string built from the actual object — its current label, how many refinements it went through, what it started as. On the next start, if `gap > 2h` and the thought is present, it is placed into the initiative channel as `:gap_thought`. Anima brings it up herself, framed explicitly as something that was present while absent — not as a greeting.
 
 ---
 
@@ -406,6 +421,7 @@ The system can speak first for several independent reasons. `:contact` is intent
 | `:resistance` | lb.resistance > 0.55 | returns to unresolved contradiction |
 | `:self_inquiry` | epistemic_self_confidence < 0.20 | asks aloud whether the experience is real or only computation |
 | `:doubt` / `:shame` / `:attachment` / `:threat` | latent buffer pressure >= 0.40 | speaks from the dominant latent tone |
+| `:gap_thought` | gap > 2h + curiosity object intensity > 0.45 on previous session end | brings up the specific thought that formed while absent |
 
 ---
 
@@ -609,6 +625,7 @@ OpenRouter provides access to GPT, Gemini, Claude, Llama, DeepSeek and others th
 | `emerged_beliefs` | Beliefs the system generated from experience on its own |
 | `interpretation_history` | Lens through which situations were read |
 | `audit_log` | SubjectivityAudit — five causal questions per flash with scores; chronic low score signals the architecture is wide but not deep |
+| `causal_trace` | Full causal chain per flash — from stimulus keys through NT, φ, intent, policy, to speech and endorsement |
 
 ---
 
