@@ -307,6 +307,67 @@ CREATE TABLE IF NOT EXISTS audit_log (
         db,
         "CREATE INDEX IF NOT EXISTS idx_audit_flash ON audit_log(flash DESC);",
     )
+
+    SQLite.execute(
+        db,
+        """
+CREATE TABLE IF NOT EXISTS causal_trace (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    flash            INTEGER NOT NULL,
+    timestamp        REAL    NOT NULL,
+    stimulus_keys    TEXT    NOT NULL DEFAULT '',
+    memory_bias      REAL    NOT NULL DEFAULT 0.0,
+    nt_serotonin     REAL    NOT NULL DEFAULT 0.0,
+    nt_dopamine      REAL    NOT NULL DEFAULT 0.0,
+    nt_noradrenaline REAL    NOT NULL DEFAULT 0.0,
+    phi              REAL    NOT NULL DEFAULT 0.0,
+    gc_tension       REAL    NOT NULL DEFAULT 0.0,
+    intent_goal      TEXT    NOT NULL DEFAULT '',
+    intent_strength  REAL    NOT NULL DEFAULT 0.0,
+    policy_drive     TEXT    NOT NULL DEFAULT '',
+    speech_length    INTEGER NOT NULL DEFAULT 0,
+    self_hear_mismatch REAL  NOT NULL DEFAULT 0.0,
+    endorsed         TEXT    NOT NULL DEFAULT '',
+    causal_ownership REAL    NOT NULL DEFAULT 0.0
+);
+""",
+    )
+    SQLite.execute(
+        db,
+        "CREATE INDEX IF NOT EXISTS idx_ctrace_flash ON causal_trace(flash DESC);",
+    )
+end
+
+# --- CausalTrace ----------------------------------------------------------
+
+function save_causal_trace!(db::SQLite.DB, trace::NamedTuple)
+    DBInterface.execute(
+        db,
+        """INSERT INTO causal_trace
+           (flash, timestamp, stimulus_keys, memory_bias,
+            nt_serotonin, nt_dopamine, nt_noradrenaline,
+            phi, gc_tension, intent_goal, intent_strength, policy_drive,
+            speech_length, self_hear_mismatch, endorsed, causal_ownership)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (
+            trace.flash,
+            trace.timestamp,
+            trace.stimulus_keys,
+            trace.memory_bias,
+            trace.nt_serotonin,
+            trace.nt_dopamine,
+            trace.nt_noradrenaline,
+            trace.phi,
+            trace.gc_tension,
+            trace.intent_goal,
+            trace.intent_strength,
+            trace.policy_drive,
+            trace.speech_length,
+            trace.self_hear_mismatch,
+            trace.endorsed,
+            trace.causal_ownership,
+        ),
+    )
 end
 
 # --- Endorsement update ---------------------------------------------------
