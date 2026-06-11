@@ -397,6 +397,7 @@ mutable struct AgencyLoop
     self_coherence::Float64             # стан відповідає очікуванням
     identity_baseline::Vector{Float64}  # prior_mu при першому стабільному старті — "якою я була"
     identity_drift::Float64             # евклідова відстань від baseline — наскільки змістилась
+    chronic_low_serotonin::Int          # тіки з serotonin < 0.35 підряд; підриває causal_ownership
     ownership_history::BoundedQueue{Float64}
     agency_events::BoundedQueue{
         NamedTuple{(:flash, :intent, :ownership, :note),Tuple{Int,String,Float64,String}},
@@ -416,6 +417,7 @@ function AgencyLoop()
         0.0,
         Float64[],  # identity_baseline — порожній до першого збереження
         0.0,        # identity_drift
+        0,          # chronic_low_serotonin
         BoundedQueue{Float64}(30),
         BoundedQueue{
             NamedTuple{
@@ -628,6 +630,7 @@ al_to_json(al::AgencyLoop) =
         "self_coherence" => al.self_coherence,
         "identity_baseline" => al.identity_baseline,
         "identity_drift" => al.identity_drift,
+        "chronic_low_serotonin" => al.chronic_low_serotonin,
     )
 function al_from_json!(al::AgencyLoop, d::AbstractDict)
     al.agency_confidence = Float64(get(d, "agency_confidence", 0.5))
@@ -642,6 +645,7 @@ function al_from_json!(al::AgencyLoop, d::AbstractDict)
         al.identity_baseline = Float64.(raw_baseline)
     end
     al.identity_drift = Float64(get(d, "identity_drift", 0.0))
+    al.chronic_low_serotonin = Int(get(d, "chronic_low_serotonin", 0))
 end
 
 # --- Self Update (головна функція) -----------------------------------------
