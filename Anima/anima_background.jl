@@ -182,6 +182,12 @@ function _maybe_self_initiate!(
     user_trust_factor = user_m > 0.6 ? 0.65 : user_m < 0.3 ? 1.4 : 1.0
     effective_cooldown = SELF_INITIATE_COOLDOWN_SECS * user_trust_factor
 
+    # Естетично насичений стан → коротший cooldown: є що сказати
+    _top_aes = top_aesthetic(a.aesthetic_sense, a.flash_count)
+    if !isnothing(_top_aes) && _top_aes.intensity > 0.45
+        effective_cooldown *= 0.80
+    end
+
     now_t - a._last_self_msg_time < effective_cooldown && return
     now_t - a._last_user_time < SELF_INITIATE_GAP_SECS && return
 
@@ -498,6 +504,54 @@ function _latent_pressure_effects!(a::Anima)
     nothing
 end
 
+# Тиск від іншого → disclosure_threshold.
+# other_model накопичує pressure_events і open_exchanges між сесіями.
+# Хронічний тиск без відкритих обмінів → закриваємось.
+# Баланс відкритості → трохи відкриваємось.
+function _other_model_effects!(a::Anima, mem)
+    isnothing(mem) && return
+    try
+        pressure_row = DBInterface.execute(
+            mem.db,
+            "SELECT count FROM other_model WHERE key='pressure_events' LIMIT 1",
+        ) |> collect
+        open_row = DBInterface.execute(
+            mem.db,
+            "SELECT count FROM other_model WHERE key='open_exchanges' LIMIT 1",
+        ) |> collect
+        pressure = isempty(pressure_row) ? 0 : Int(pressure_row[1].count)
+        open_ex  = isempty(open_row)     ? 0 : Int(open_row[1].count)
+        thr = a.inner_dialogue.disclosure_threshold
+        if pressure >= 3 && open_ex < 2
+            delta = (pressure - 2) * 0.012
+            thr = clamp(thr + delta, 0.10, 0.90)
+        elseif open_ex >= 4 && pressure < 2
+            delta = (open_ex - 3) * 0.008
+            thr = clamp(thr - delta, 0.10, 0.90)
+        end
+        a.inner_dialogue.disclosure_threshold = thr
+        a.inner_dialogue.disclosure_mode =
+            thr < 0.30 ? :open : thr < 0.60 ? :guarded : :closed
+    catch
+    end
+    nothing
+end
+
+# Хронічно низький serotonin → повільний drift causal_ownership вниз.
+# Виснаженість підриває відчуття що "це через мене".
+function _chronic_cost_effects!(a::Anima)
+    if a.nt.serotonin < 0.35
+        a.agency.chronic_low_serotonin += 1
+    else
+        a.agency.chronic_low_serotonin = max(0, a.agency.chronic_low_serotonin - 1)
+    end
+    if a.agency.chronic_low_serotonin >= 5
+        drift = (a.agency.chronic_low_serotonin - 4) * 0.003
+        a.agency.causal_ownership = clamp(a.agency.causal_ownership - drift, 0.25, 1.0)
+    end
+    nothing
+end
+
 # --- Slow Tick (повний цикл ~60с) ------------------------------------------
 
 """
@@ -600,6 +654,12 @@ function slow_tick!(
 
     # LatentBuffer → диференційована поведінка між взаємодіями
     _latent_pressure_effects!(a)
+
+    # Модель іншого → disclosure_threshold
+    _other_model_effects!(a, mem)
+
+    # Хронічний cost → causal_ownership drift
+    _chronic_cost_effects!(a)
 
     # Idle thought
     _idle_thought_maybe!(a, mem)
@@ -1024,6 +1084,24 @@ function start_background!(
                 elseif _itype == "latent_pressure"
                     a.nt.noradrenaline = clamp(a.nt.noradrenaline + _isignal * 0.06, 0.0, 1.0)
                 end
+                # formed_thought: думка що визріла між сесіями → initiative при gap > 2 год
+                _fthought = get(_intent, "formed_thought", "")
+                _gap_ok = a.temporal.gap_seconds > 7200.0
+                if !isempty(_fthought) && _gap_ok && !isnothing(bg.initiative_channel)
+                    inner = build_inner_voice(a.body, a.nt, Int(a.crisis.current_mode), 0.5, a.flash_count)
+                    signal = (
+                        inner_voice   = inner * " — " * _fthought,
+                        dominant      = :gap_thought,
+                        pressure      = 0.0,
+                        contact       = 0.0,
+                        gc_tension    = 0.0,
+                        is_impulse    = false,
+                        novelty_need  = 0.0,
+                        curiosity_label = _ilabel,
+                    )
+                    isready(bg.initiative_channel) || put!(bg.initiative_channel, signal)
+                    @info "[GAP_THOUGHT] визріла думка: \"$_fthought\""
+                end
                 rm(_intent_path)  # застосували — видаляємо щоб не застосувати двічі
             catch e
                 @warn "[SESSION_INTENT] помилка завантаження: $e"
@@ -1285,6 +1363,36 @@ function repl_with_background!(
                             @warn "[AUDIT] $e"
                         end
                     end
+                    # CausalTrace: доповнюємо speech/self_hear/endorsement і пишемо в SQLite
+                    if !isnothing(bg.mem) && !isnothing(_last_r) && hasproperty(_last_r, :causal_trace)
+                        try
+                            _ct = _last_r.causal_trace
+                            _ct.speech_length       = length(llm_reply)
+                            _ct.self_hear_mismatch  = Float64(_self_speech_mismatch(a, text_to_stimulus(llm_reply)))
+                            _ct.endorsed            = String(a.last_endorsement)
+                            _ct.causal_ownership    = Float64(a.agency.causal_ownership)
+                            save_causal_trace!(bg.mem.db, (
+                                flash               = _ct.flash,
+                                timestamp           = _ct.timestamp,
+                                stimulus_keys       = _ct.stimulus_keys,
+                                memory_bias         = _ct.memory_bias,
+                                nt_serotonin        = _ct.nt_serotonin,
+                                nt_dopamine         = _ct.nt_dopamine,
+                                nt_noradrenaline    = _ct.nt_noradrenaline,
+                                phi                 = _ct.phi,
+                                gc_tension          = _ct.gc_tension,
+                                intent_goal         = _ct.intent_goal,
+                                intent_strength     = _ct.intent_strength,
+                                policy_drive        = _ct.policy_drive,
+                                speech_length       = _ct.speech_length,
+                                self_hear_mismatch  = _ct.self_hear_mismatch,
+                                endorsed            = _ct.endorsed,
+                                causal_ownership    = _ct.causal_ownership,
+                            ))
+                        catch e
+                            @warn "[CTRACE] $e"
+                        end
+                    end
                     # Вартість вибору
                     apply_choice_cost!(
                         a.nt,
@@ -1373,6 +1481,8 @@ function repl_with_background!(
                     "RESISTANCE"
                 elseif get(sig, :dominant, :pressure) == :self_inquiry
                     "SELF_INQUIRY"
+                elseif get(sig, :dominant, :pressure) == :gap_thought
+                    "GAP_THOUGHT"
                 else
                     "pressure"
                 end
@@ -1380,7 +1490,11 @@ function repl_with_background!(
                 println(
                     "\n  [INITIATIVE/$(_imp_label)] $(sig.dominant) | contact=$(round(sig.contact,digits=2)) gc=$(_gc)",
                 )
-                dominant_note = if sig.dominant == :curiosity_driven
+                dominant_note = if sig.dominant == :gap_thought
+                    co_ctx = get(sig, :curiosity_label, "")
+                    base = "Аніма не бачила людину довгий час. Поки їх не було — питання визріло, думка сформувалась. Це не загальне привітання — це конкретна думка яка чекала. Вислови її природно, як щось що лежало і нарешті знаходить слова."
+                    isempty(co_ctx) ? base : "$(base)\nОБ'ЄКТ: $(co_ctx)"
+                elseif sig.dominant == :curiosity_driven
                     co_ctx = get(sig, :curiosity_label, "")
                     base = "Аніма думала про конкретне питання яке не може закрити — і хоче його висловити або дізнатись більше."
                     isempty(co_ctx) ? base : "$(base)\nОБ'ЄКТ ЦІКАВОСТІ: $(co_ctx)\nЗапитай про це конкретно або сформулюй що саме незрозуміло. Не загально — саме цей об'єкт."
@@ -1750,7 +1864,7 @@ $(dominant_note)"""
                 _last_r = r
                 # ignition спрацьовує всередині experience! і логується через @info
                 # тут ловимо через mem_resonance > 0 як проксі
-                _last_had_ignition = r.mem_resonance > 0
+                _last_had_ignition = r.had_ignition
                 dialog_to_belief_signal!(a.sbg, cmd, a.flash_count)
                 # Genuine Dialogue: детекція уникнутих тем
                 # Якщо система закрита під час розмови — тема обходиться стороною
