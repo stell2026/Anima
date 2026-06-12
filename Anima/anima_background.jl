@@ -664,6 +664,14 @@ function slow_tick!(
     # Idle thought
     _idle_thought_maybe!(a, mem)
 
+    # MAL: арбітраж перед ініціативою — який цикл зараз має сигнальну перевагу.
+    # Transient, не зберігається; carryover оновлюється всередині.
+    _slow_arb = compute_arbitration(a)
+    if _slow_arb.regime != :default
+        @info "[MAL] dominant=$(_slow_arb.dominant_loop) regime=$(_slow_arb.regime) " *
+              "score=$(round(_slow_arb.score, digits=2)) det=$(_slow_arb.determinant)"
+    end
+
     # Ініціатива без стимулу: Аніма може почати розмову першою
     _maybe_self_initiate!(a, mem, dialog_history, initiative_ch)
 
@@ -1384,6 +1392,10 @@ function repl_with_background!(
                                 intent_goal         = _ct.intent_goal,
                                 intent_strength     = _ct.intent_strength,
                                 policy_drive        = _ct.policy_drive,
+                                mal_dominant        = _ct.mal_dominant,
+                                mal_regime          = _ct.mal_regime,
+                                mal_score           = _ct.mal_score,
+                                mal_determinant     = _ct.mal_determinant,
                                 speech_length       = _ct.speech_length,
                                 self_hear_mismatch  = _ct.self_hear_mismatch,
                                 endorsed            = _ct.endorsed,
