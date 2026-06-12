@@ -398,6 +398,8 @@ mutable struct AgencyLoop
     identity_baseline::Vector{Float64}  # prior_mu при першому стабільному старті — "якою я була"
     identity_drift::Float64             # евклідова відстань від baseline — наскільки змістилась
     chronic_low_serotonin::Int          # тіки з serotonin < 0.35 підряд; підриває causal_ownership
+    # MAL: програші в арбітражі не зникають — decay + persistence між тіками
+    signal_carryover::Dict{Symbol,Float64}
     ownership_history::BoundedQueue{Float64}
     agency_events::BoundedQueue{
         NamedTuple{(:flash, :intent, :ownership, :note),Tuple{Int,String,Float64,String}},
@@ -418,6 +420,7 @@ function AgencyLoop()
         Float64[],  # identity_baseline — порожній до першого збереження
         0.0,        # identity_drift
         0,          # chronic_low_serotonin
+        Dict{Symbol,Float64}(),  # signal_carryover
         BoundedQueue{Float64}(30),
         BoundedQueue{
             NamedTuple{
