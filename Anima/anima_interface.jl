@@ -598,6 +598,11 @@ mutable struct CausalTrace
     intent_goal::String
     intent_strength::Float64
     policy_drive::String
+    # MAL: який цикл мав сигнальну перевагу цього флешу
+    mal_dominant::String
+    mal_regime::String
+    mal_score::Float64
+    mal_determinant::String
     # заповнюється в background:
     speech_length::Int
     self_hear_mismatch::Float64
@@ -609,6 +614,7 @@ CausalTrace(flash::Int) = CausalTrace(
     flash, time(), "", 0.0,
     0.0, 0.0, 0.0, 0.0, 0.0,
     "", 0.0, "",
+    "", "", 0.0, "",
     0, 0.0, "", 0.0,
 )
 
@@ -903,6 +909,10 @@ function experience!(
         a.flash_count,
     )
 
+    # MAL: Meta-Arbitration — який цикл має сигнальну перевагу цього флешу.
+    # Чиста функція, transient — результат тільки логується в CausalTrace.
+    _arb = compute_arbitration(a)
+
     # LatentBuffer + StructuralScars
     lb_snap = update_latent!(
         a.latent_buffer,
@@ -945,6 +955,10 @@ function experience!(
     _ctrace.intent_goal      = isnothing(intent) ? "" : String(intent.goal)
     _ctrace.intent_strength  = isnothing(intent) ? 0.0 : Float64(intent.strength)
     _ctrace.policy_drive     = String(policy.drive)
+    _ctrace.mal_dominant     = String(_arb.dominant_loop)
+    _ctrace.mal_regime       = String(_arb.regime)
+    _ctrace.mal_score        = _arb.score
+    _ctrace.mal_determinant  = _arb.determinant
 
     update_blanket!(a.blanket, t_adj, a_r, s_adj, c_adj)
     homeo_snap = update_homeostasis!(a.homeostasis, vad)
