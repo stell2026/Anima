@@ -329,10 +329,19 @@ CREATE TABLE IF NOT EXISTS causal_trace (
     mal_regime       TEXT    NOT NULL DEFAULT '',
     mal_score        REAL    NOT NULL DEFAULT 0.0,
     mal_determinant  TEXT    NOT NULL DEFAULT '',
+    mal_runner_up       TEXT NOT NULL DEFAULT '',
+    mal_runner_up_score REAL NOT NULL DEFAULT 0.0,
+    mal_loop_scores     TEXT NOT NULL DEFAULT '',
+    dom_drive_nt        TEXT NOT NULL DEFAULT '',
+    dom_drive_mal       TEXT NOT NULL DEFAULT '',
+    drive_conflict      INTEGER NOT NULL DEFAULT 0,
     speech_length    INTEGER NOT NULL DEFAULT 0,
     self_hear_mismatch REAL  NOT NULL DEFAULT 0.0,
     endorsed         TEXT    NOT NULL DEFAULT '',
-    causal_ownership REAL    NOT NULL DEFAULT 0.0
+    causal_ownership REAL    NOT NULL DEFAULT 0.0,
+    progress_signal  INTEGER NOT NULL DEFAULT 0,
+    progress_target  TEXT    NOT NULL DEFAULT '',
+    churn            INTEGER NOT NULL DEFAULT 0
 );
 """,
     )
@@ -353,6 +362,15 @@ CREATE TABLE IF NOT EXISTS causal_trace (
             ("mal_regime",      "TEXT NOT NULL DEFAULT ''"),
             ("mal_score",       "REAL NOT NULL DEFAULT 0.0"),
             ("mal_determinant", "TEXT NOT NULL DEFAULT ''"),
+            ("progress_signal", "INTEGER NOT NULL DEFAULT 0"),
+            ("progress_target", "TEXT NOT NULL DEFAULT ''"),
+            ("churn",           "INTEGER NOT NULL DEFAULT 0"),
+            ("mal_runner_up",       "TEXT NOT NULL DEFAULT ''"),
+            ("mal_runner_up_score", "REAL NOT NULL DEFAULT 0.0"),
+            ("mal_loop_scores",     "TEXT NOT NULL DEFAULT ''"),
+            ("dom_drive_nt",        "TEXT NOT NULL DEFAULT ''"),
+            ("dom_drive_mal",       "TEXT NOT NULL DEFAULT ''"),
+            ("drive_conflict",      "INTEGER NOT NULL DEFAULT 0"),
         )
         for (col, decl) in _mal_migrations
             if !(col in existing_cols)
@@ -373,8 +391,11 @@ function save_causal_trace!(db::SQLite.DB, trace::NamedTuple)
             nt_serotonin, nt_dopamine, nt_noradrenaline,
             phi, gc_tension, intent_goal, intent_strength, policy_drive,
             mal_dominant, mal_regime, mal_score, mal_determinant,
-            speech_length, self_hear_mismatch, endorsed, causal_ownership)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            mal_runner_up, mal_runner_up_score, mal_loop_scores,
+            dom_drive_nt, dom_drive_mal, drive_conflict,
+            speech_length, self_hear_mismatch, endorsed, causal_ownership,
+            progress_signal, progress_target, churn)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             trace.flash,
             trace.timestamp,
@@ -392,10 +413,19 @@ function save_causal_trace!(db::SQLite.DB, trace::NamedTuple)
             trace.mal_regime,
             trace.mal_score,
             trace.mal_determinant,
+            trace.mal_runner_up,
+            trace.mal_runner_up_score,
+            trace.mal_loop_scores,
+            trace.dom_drive_nt,
+            trace.dom_drive_mal,
+            trace.drive_conflict,
             trace.speech_length,
             trace.self_hear_mismatch,
             trace.endorsed,
             trace.causal_ownership,
+            trace.progress_signal,
+            trace.progress_target,
+            trace.churn,
         ),
     )
 end
