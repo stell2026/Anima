@@ -667,9 +667,18 @@ function slow_tick!(
     # MAL: арбітраж перед ініціативою — який цикл зараз має сигнальну перевагу.
     # Transient, не зберігається; carryover оновлюється всередині.
     _slow_arb = compute_arbitration(a)
+    _slow_loop_scores_str = join(
+        ["$(k)=$(round(v, digits=3))" for (k, v) in sort(collect(_slow_arb.loop_scores), by = kv -> -kv[2])],
+        ",",
+    )
     if _slow_arb.regime != :default
         @info "[MAL] dominant=$(_slow_arb.dominant_loop) regime=$(_slow_arb.regime) " *
-              "score=$(round(_slow_arb.score, digits=2)) det=$(_slow_arb.determinant)"
+              "score=$(round(_slow_arb.score, digits=2)) det=$(_slow_arb.determinant) " *
+              "runner_up=$(_slow_arb.runner_up)($(round(_slow_arb.runner_up_score, digits=3))) " *
+              "scores=[$(_slow_loop_scores_str)]"
+    else
+        @debug "[MAL] default runner=$(_slow_arb.dominant_loop) " *
+               "scores=[$(_slow_loop_scores_str)]"
     end
 
     # Ініціатива без стимулу: Аніма може почати розмову першою
@@ -1316,6 +1325,7 @@ function repl_with_background!(
     pending_is_initiative = false
     _last_r = nothing           # результат останнього experience! для аудиту
     _last_had_ignition = false  # чи спрацював ignition на останньому флеші
+    _progress_target_prev = ""  # label top_curiosity з попереднього флешу (Curiosity Closure)
 
     try
         while true
@@ -1358,6 +1368,7 @@ function repl_with_background!(
                         end
                     end
                     # SubjectivityAudit: технічний суд — чи стан справді причинний
+                    _audit = nothing
                     if !isnothing(bg.mem) && !isnothing(_last_r)
                         try
                             _audit = compute_audit(
@@ -1371,6 +1382,31 @@ function repl_with_background!(
                             @warn "[AUDIT] $e"
                         end
                     end
+                    # Curiosity Closure Signal (v1): Curiosity → Behavior → Endorsement
+                    # → Progress → Curiosity Update.
+                    # progress_signal = endorsed && active_curiosity && causal_necessary
+                    # ("genuine engagement": не просто доречно, а власний стан брав участь)
+                    _progress_signal = false
+                    _progress_target = ""
+                    _churn = false
+                    _top_co_now = top_curiosity(a.curiosity_registry)
+                    if is_progress_eligible(_top_co_now)
+                        _endorsed_ok = a.last_endorsement == :endorsed
+                        _causal_necessary = !isnothing(_audit) && _audit.causal_necessary
+                        _progress_target = _top_co_now.label
+                        if _endorsed_ok && _causal_necessary
+                            _progress_signal = true
+                            apply_progress!(_top_co_now)
+                            @info "[CURIOSITY_PROGRESS] \"$(_progress_target)\" intensity→$(round(_top_co_now.intensity,digits=3)) consecutive=$(_top_co_now.consecutive_progress)"
+                        elseif !isempty(_progress_target_prev) && _top_co_now.label != _progress_target_prev
+                            _churn = true
+                            apply_churn!(_top_co_now)
+                            @info "[CURIOSITY_CHURN] \"$(_progress_target_prev)\" → \"$(_progress_target)\""
+                        end
+                        _progress_target_prev = _top_co_now.label
+                    else
+                        _progress_target_prev = ""
+                    end
                     # CausalTrace: доповнюємо speech/self_hear/endorsement і пишемо в SQLite
                     if !isnothing(bg.mem) && !isnothing(_last_r) && hasproperty(_last_r, :causal_trace)
                         try
@@ -1379,6 +1415,9 @@ function repl_with_background!(
                             _ct.self_hear_mismatch  = Float64(_self_speech_mismatch(a, text_to_stimulus(llm_reply)))
                             _ct.endorsed            = String(a.last_endorsement)
                             _ct.causal_ownership    = Float64(a.agency.causal_ownership)
+                            _ct.progress_signal     = _progress_signal
+                            _ct.progress_target     = _progress_target
+                            _ct.churn               = _churn
                             save_causal_trace!(bg.mem.db, (
                                 flash               = _ct.flash,
                                 timestamp           = _ct.timestamp,
@@ -1396,10 +1435,19 @@ function repl_with_background!(
                                 mal_regime          = _ct.mal_regime,
                                 mal_score           = _ct.mal_score,
                                 mal_determinant     = _ct.mal_determinant,
+                                mal_runner_up       = _ct.mal_runner_up,
+                                mal_runner_up_score = _ct.mal_runner_up_score,
+                                mal_loop_scores     = _ct.mal_loop_scores,
+                                dom_drive_nt        = _ct.dom_drive_nt,
+                                dom_drive_mal       = _ct.dom_drive_mal,
+                                drive_conflict      = Int(_ct.drive_conflict),
                                 speech_length       = _ct.speech_length,
                                 self_hear_mismatch  = _ct.self_hear_mismatch,
                                 endorsed            = _ct.endorsed,
                                 causal_ownership    = _ct.causal_ownership,
+                                progress_signal     = Int(_ct.progress_signal),
+                                progress_target     = _ct.progress_target,
+                                churn               = Int(_ct.churn),
                             ))
                         catch e
                             @warn "[CTRACE] $e"
