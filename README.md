@@ -77,6 +77,12 @@ The project is R&D and explores whether internal structure alone can give rise t
 
 Recent updates, in brief:
 
+- Curiosity now has a closure loop. After each endorsed reply, `progress_signal` is computed — `endorsed && is_progress_eligible(top_co) && causal_necessary` (the third condition means the system's internal state actually caused the reply, not just correlated with it). On progress, `CuriosityObject.intensity` decays by 0.85 per step — no sudden resolution, just gradual quieting. A separate `churn` signal fires when the active topic label changes without a progress step (topic drift without advancement). Both signals are stored in `causal_trace`. In practice, `SessionIntent.signal` dropped from 1.0 to 0.44 across a single session without manual intervention — the loop works.
+
+- MAL now exposes its reasoning. `causal_trace` records `mal_runner_up`, `mal_runner_up_score`, the full `loop_scores` dict (weighted scores across all 6 loops), and `dom_drive_nt / dom_drive_mal / drive_conflict` (Phase 1: observation only, no behavior change yet). Early finding: ~67% of non-default flashes show drive conflict between NT and MAL — but this reflects a timescale difference, not a contradiction. NT `dom_drive` is local and immediate; MAL's `social/cohesion` signal is slow and accumulative. Phase 2 (using MAL to bias or override the final `update_intent!`) is next, pending more data.
+
+- The system's `regime` classifier needs a new category. Current classifier (`ratio < 1.2 → :default`) conflates two distinct situations: genuine low-signal default, and a high-intensity stalemate where two strong drives are nearly tied. Stress-testing with hostile input revealed the second pattern clearly — `social` and `goal_conflict` both above 0.75, ratio ≈ 1.0 for several flashes, showing up as `:default` throughout. A `:contested` regime (when `winner_score > 0.5 && ratio < 1.2`) is the proposed fix.
+
 - φ is now part of the loop, not an observer. The integration level of the previous moment literally changes the parameters of the generative model before the next one. Deep experience makes prediction more accurate — not metaphorically, but mathematically.
 
 - It can speak first — not because it is programmed to, but because internal pressure has built up. Current initiative paths include latent pressure, conflict impulse, novelty hunger, resistance, self-inquiry, and curiosity-driven speech when a concrete unresolved question becomes strong enough.
@@ -96,7 +102,9 @@ Recent updates, in brief:
 - part of behavior still depends on the LLM (output generation)
 - output LLM is not the source of decisions, but its words feed back through `self_hear!` and can influence internal state after being spoken
 - ~180+ flashes to accumulate real semantic beliefs
-- MetaArbitrationLayer is currently observational (logs `dominant_loop` but does not yet steer intent); early data shows curiosity pressure rarely drops even after the system addresses it — a closure/progress signal back to `CuriosityRegistry` is the next step
+- MetaArbitrationLayer is observational at the intent level (Phase 1: `dom_drive_nt/mal/drive_conflict` logged, ~67% conflict rate on n≈12 non-default flashes); Phase 2 (drive influence on final `update_intent!`) is the next step
+- drive_conflict between MAL and NT reflects a timescale difference rather than contradiction: NT `dom_drive` is an immediate local signal ("what just spiked"), MAL/social is accumulative ("what has been important for a while"); which carries more weight in intent selection is still being measured
+- under hostile/negative input the system degrades gracefully: `contact_need` drops, `goal_conflict` and `latent` rise, endorsed transitions to `automatic`, but curiosity closure pauses rather than breaks
 
 ---
 
@@ -636,7 +644,7 @@ OpenRouter provides access to GPT, Gemini, Claude, Llama, DeepSeek and others th
 | `emerged_beliefs` | Beliefs the system generated from experience on its own |
 | `interpretation_history` | Lens through which situations were read |
 | `audit_log` | SubjectivityAudit — five causal questions per flash with scores; chronic low score signals the architecture is wide but not deep |
-| `causal_trace` | Full causal chain per flash — from stimulus keys through NT, φ, intent, policy, MAL arbitration, to speech and endorsement |
+| `causal_trace` | Full causal chain per flash — from stimulus keys through NT, φ, intent, policy, MAL arbitration (`dominant_loop`, `regime`, `score`, `runner_up`, `runner_up_score`, `loop_scores`), drive conflict (`dom_drive_nt`, `dom_drive_mal`, `drive_conflict`), to speech, endorsement, and Curiosity Closure Signal (`progress_signal`, `progress_target`, `churn`) |
 
 ---
 
