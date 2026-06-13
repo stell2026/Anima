@@ -603,19 +603,32 @@ mutable struct CausalTrace
     mal_regime::String
     mal_score::Float64
     mal_determinant::String
+    mal_runner_up::String
+    mal_runner_up_score::Float64
+    mal_loop_scores::String     # компактний дамп weighted_scores усіх loops: "curiosity=1.0,social=0.97,..."
+    # MAL Phase 1: чи MAL і NT-drives узгоджуються щодо напрямку intent
+    dom_drive_nt::String
+    dom_drive_mal::String
+    drive_conflict::Bool
     # заповнюється в background:
     speech_length::Int
     self_hear_mismatch::Float64
     endorsed::String
     causal_ownership::Float64
+    # Curiosity Closure Signal (v1): progress_signal та churn щодо top_curiosity
+    progress_signal::Bool
+    progress_target::String
+    churn::Bool
 end
 
 CausalTrace(flash::Int) = CausalTrace(
     flash, time(), "", 0.0,
     0.0, 0.0, 0.0, 0.0, 0.0,
     "", 0.0, "",
-    "", "", 0.0, "",
+    "", "", 0.0, "", "", 0.0, "",
+    "", "", false,
     0, 0.0, "", 0.0,
+    false, "", false,
 )
 
 # --- experience! ------------------------------------------------------
@@ -959,6 +972,19 @@ function experience!(
     _ctrace.mal_regime       = String(_arb.regime)
     _ctrace.mal_score        = _arb.score
     _ctrace.mal_determinant  = _arb.determinant
+    _ctrace.mal_runner_up       = String(_arb.runner_up)
+    _ctrace.mal_runner_up_score = _arb.runner_up_score
+    _ctrace.mal_loop_scores      = join(
+        ["$(k)=$(round(v, digits=3))" for (k, v) in sort(collect(_arb.loop_scores), by = kv -> -kv[2])],
+        ",",
+    )
+    # MAL Phase 1: лише спостереження — чи MAL і NT-drives узгоджені.
+    # :default не мапиться (немає переможця) — порівняння неінформативне.
+    _ctrace.dom_drive_nt  = isnothing(dom_drive) ? "" : dom_drive
+    _ctrace.dom_drive_mal = _arb.regime == :default ? "" : get(_MAL_DRIVE_MAP, _arb.dominant_loop, "")
+    _ctrace.drive_conflict = !isempty(_ctrace.dom_drive_mal) &&
+        !isempty(_ctrace.dom_drive_nt) &&
+        _ctrace.dom_drive_nt != _ctrace.dom_drive_mal
 
     update_blanket!(a.blanket, t_adj, a_r, s_adj, c_adj)
     homeo_snap = update_homeostasis!(a.homeostasis, vad)
