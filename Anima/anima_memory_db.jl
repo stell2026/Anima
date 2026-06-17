@@ -288,6 +288,23 @@ CREATE TABLE IF NOT EXISTS other_model (
     SQLite.execute(
         db,
         """
+CREATE TABLE IF NOT EXISTS other_model_hypotheses (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    flash_created   INTEGER NOT NULL,
+    query_type      TEXT    NOT NULL,
+    predicted_state TEXT    NOT NULL,
+    confidence      REAL    NOT NULL DEFAULT 0.5,
+    label           TEXT    NOT NULL DEFAULT \'\',
+    outcome         TEXT    NOT NULL DEFAULT \'\',
+    outcome_flash   INTEGER NOT NULL DEFAULT 0,
+    error_score     REAL    NOT NULL DEFAULT -1.0
+);
+""",
+    )
+
+    SQLite.execute(
+        db,
+        """
 CREATE TABLE IF NOT EXISTS audit_log (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     flash            INTEGER NOT NULL,
@@ -1484,7 +1501,7 @@ function other_model_to_block(mem::MemoryDB)::String
     # топ-2 теми за частотою
     topic_rows = Tables.rowtable(DBInterface.execute(
         mem.db,
-        """SELECT label, count FROM other_model
+        """SELECT label, count AS cnt FROM other_model
            WHERE key LIKE 'topic:%' AND count >= 2
            ORDER BY count DESC LIMIT 2""",
     ))
@@ -1496,22 +1513,92 @@ function other_model_to_block(mem::MemoryDB)::String
     # тиск
     pressure_rows = Tables.rowtable(DBInterface.execute(
         mem.db,
-        "SELECT count FROM other_model WHERE key='pressure_events'",
+        "SELECT count AS cnt FROM other_model WHERE key='pressure_events'",
     ))
-    if !isempty(pressure_rows) && pressure_rows[1].count >= 3
-        push!(parts, "тиснув $(pressure_rows[1].count) разів")
+    if !isempty(pressure_rows) && pressure_rows[1].cnt >= 3
+        push!(parts, "тиснув $(pressure_rows[1].cnt) разів")
     end
 
     # відкритість
     open_rows = Tables.rowtable(DBInterface.execute(
         mem.db,
-        "SELECT count FROM other_model WHERE key='open_exchanges'",
+        "SELECT count AS cnt FROM other_model WHERE key='open_exchanges'",
     ))
-    if !isempty(open_rows) && open_rows[1].count >= 2
-        push!(parts, "відкривалась $(open_rows[1].count) разів")
+    if !isempty(open_rows) && open_rows[1].cnt >= 2
+        push!(parts, "відкривалась $(open_rows[1].cnt) разів")
     end
 
     isempty(parts) ? "" : "інший: $(join(parts, "; "))"
+end
+
+# --- Theory of Mind: активні гіпотези про іншого ---------------------------
+#
+# Детерміністична Фаза 1: правила → гіпотеза → action effect → error_score.
+# Три типи: SOCIAL (відкритість), PREDICTION (опір), VALUE (повторювана тема).
+# Кожен тип має власну evaluation функцію — не змішувати критерії.
+
+function save_hypothesis!(
+    mem::MemoryDB,
+    flash::Int,
+    query_type::String,
+    predicted_state::String,
+    confidence::Float64,
+    label::String,
+)
+    # Якщо вже є активна гіпотеза того ж типу — оновлюємо confidence, не дублюємо
+    existing = Tables.rowtable(DBInterface.execute(
+        mem.db,
+        "SELECT id FROM other_model_hypotheses WHERE query_type=? AND outcome='' LIMIT 1",
+        (query_type,),
+    ))
+    if !isempty(existing)
+        DBInterface.execute(
+            mem.db,
+            "UPDATE other_model_hypotheses SET confidence=?, flash_created=?, predicted_state=?, label=? WHERE id=?",
+            (confidence, flash, predicted_state, label, existing[1].id),
+        )
+    else
+        DBInterface.execute(
+            mem.db,
+            """INSERT INTO other_model_hypotheses
+               (flash_created, query_type, predicted_state, confidence, label)
+               VALUES (?, ?, ?, ?, ?)""",
+            (flash, query_type, predicted_state, confidence, label),
+        )
+    end
+end
+
+function get_active_hypotheses(mem::MemoryDB)
+    Tables.rowtable(DBInterface.execute(
+        mem.db,
+        "SELECT id, query_type, predicted_state, confidence, label FROM other_model_hypotheses WHERE outcome='' ORDER BY flash_created DESC",
+    ))
+end
+
+# Evaluate і закрити гіпотезу. outcome_value — реальний сигнал (0.0–1.0).
+# error_score = |confidence - outcome_value|
+function resolve_hypothesis!(
+    mem::MemoryDB,
+    id::Int,
+    flash::Int,
+    outcome_value::Float64,
+    confidence::Float64,
+)
+    outcome = outcome_value >= 0.5 ? "confirmed" : "disconfirmed"
+    error_score = abs(confidence - outcome_value)
+    DBInterface.execute(
+        mem.db,
+        "UPDATE other_model_hypotheses SET outcome=?, outcome_flash=?, error_score=? WHERE id=?",
+        (outcome, flash, error_score, id),
+    )
+end
+
+# Активні гіпотези для identity_block — тільки ті що ще не закриті
+function active_hypotheses_to_block(mem::MemoryDB)::String
+    rows = get_active_hypotheses(mem)
+    isempty(rows) && return ""
+    parts = [String(r.label) for r in rows]
+    "очікую: $(join(parts, "; "))"
 end
 
 # --- Phenotype Accumulator -------------------------------------------------
