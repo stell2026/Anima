@@ -51,6 +51,7 @@ mutable struct BackgroundHandle
     subj::Union{Any,Nothing}  # SubjectivityEngine або nothing
     dialog_history::Ref{Vector}  # для dream generation
     initiative_channel::Channel{Any}  # самовиникні репліки
+    last_mal_regime::Symbol  # MAL режим попереднього slow_tick — логуємо тільки зміни
 end
 
 # --- Серцевий тік + аритмія ------------------------------------------------
@@ -511,16 +512,18 @@ end
 function _other_model_effects!(a::Anima, mem)
     isnothing(mem) && return
     try
-        pressure_row = DBInterface.execute(
+        _si(x, d = 0) = (ismissing(x) || isnothing(x)) ? d : Int(x)
+        _sf(x, d = 0.0) = (ismissing(x) || isnothing(x)) ? d : Float64(x)
+        pressure_row = Tables.rowtable(DBInterface.execute(
             mem.db,
-            "SELECT count FROM other_model WHERE key='pressure_events' LIMIT 1",
-        ) |> collect
-        open_row = DBInterface.execute(
+            "SELECT count AS cnt FROM other_model WHERE key='pressure_events' LIMIT 1",
+        ))
+        open_row = Tables.rowtable(DBInterface.execute(
             mem.db,
-            "SELECT count FROM other_model WHERE key='open_exchanges' LIMIT 1",
-        ) |> collect
-        pressure = isempty(pressure_row) ? 0 : Int(pressure_row[1].count)
-        open_ex  = isempty(open_row)     ? 0 : Int(open_row[1].count)
+            "SELECT count AS cnt FROM other_model WHERE key='open_exchanges' LIMIT 1",
+        ))
+        pressure = isempty(pressure_row) ? 0 : _si(pressure_row[1].cnt)
+        open_ex  = isempty(open_row)     ? 0 : _si(open_row[1].cnt)
         thr = a.inner_dialogue.disclosure_threshold
         if pressure >= 3 && open_ex < 2
             delta = (pressure - 2) * 0.012
@@ -529,6 +532,23 @@ function _other_model_effects!(a::Anima, mem)
             delta = (open_ex - 3) * 0.008
             thr = clamp(thr - delta, 0.10, 0.90)
         end
+
+        # Theory of Mind: активна PREDICTION гіпотеза → обережніша відкритість
+        # SOCIAL гіпотеза з високою confidence → трохи відкриваємось назустріч
+        pred_rows = Tables.rowtable(DBInterface.execute(
+            mem.db,
+            "SELECT confidence FROM other_model_hypotheses WHERE query_type='PREDICTION' AND outcome='' LIMIT 1",
+        ))
+        soc_rows = Tables.rowtable(DBInterface.execute(
+            mem.db,
+            "SELECT confidence FROM other_model_hypotheses WHERE query_type='SOCIAL' AND outcome='' LIMIT 1",
+        ))
+        if !isempty(pred_rows)
+            thr = clamp(thr + _sf(pred_rows[1].confidence, 0.5) * 0.08, 0.10, 0.90)
+        elseif !isempty(soc_rows) && _sf(soc_rows[1].confidence, 0.5) >= 0.6
+            thr = clamp(thr - _sf(soc_rows[1].confidence, 0.5) * 0.05, 0.10, 0.90)
+        end
+
         a.inner_dialogue.disclosure_threshold = thr
         a.inner_dialogue.disclosure_mode =
             thr < 0.30 ? :open : thr < 0.60 ? :guarded : :closed
@@ -566,6 +586,7 @@ function slow_tick!(
     subj = nothing,
     dialog_history::Vector = Dict[],
     initiative_ch::Union{Channel{Any},Nothing} = nothing,
+    bg = nothing,
 )
 
     # Circadian drift
@@ -671,13 +692,16 @@ function slow_tick!(
         ["$(k)=$(round(v, digits=3))" for (k, v) in sort(collect(_slow_arb.loop_scores), by = kv -> -kv[2])],
         ",",
     )
-    if _slow_arb.regime != :default
-        @info "[MAL] dominant=$(_slow_arb.dominant_loop) regime=$(_slow_arb.regime) " *
+    _prev_mal_regime = isnothing(bg) ? :default : bg.last_mal_regime
+    if _slow_arb.regime != _prev_mal_regime
+        @info "[MAL] $(String(_prev_mal_regime)) → $(String(_slow_arb.regime)) " *
+              "dominant=$(_slow_arb.dominant_loop) " *
               "score=$(round(_slow_arb.score, digits=2)) det=$(_slow_arb.determinant) " *
               "runner_up=$(_slow_arb.runner_up)($(round(_slow_arb.runner_up_score, digits=3))) " *
               "scores=[$(_slow_loop_scores_str)]"
+        !isnothing(bg) && (bg.last_mal_regime = _slow_arb.regime)
     else
-        @debug "[MAL] default runner=$(_slow_arb.dominant_loop) " *
+        @debug "[MAL] $(String(_slow_arb.regime)) dominant=$(_slow_arb.dominant_loop) " *
                "scores=[$(_slow_loop_scores_str)]"
     end
 
@@ -1028,7 +1052,7 @@ function background_tick!(a::Anima, bg::BackgroundHandle)
     did_slow = false
     now_t = time()
     if now_t - bg.last_slow_tick >= SLOW_TICK_INTERVAL
-        slow_tick!(a, bg.mem, bg.subj, bg.dialog_history[], bg.initiative_channel)
+        slow_tick!(a, bg.mem, bg.subj, bg.dialog_history[], bg.initiative_channel, bg)
         background_save!(a)
         bg.last_slow_tick = now_t
         bg.slow_tick_count += 1
@@ -1067,6 +1091,7 @@ function start_background!(
         subj,
         Ref{Vector}(dialog_history),
         Channel{Any}(4),
+        :default,
     )
 
     task = Threads.@spawn begin
@@ -1407,6 +1432,15 @@ function repl_with_background!(
                     else
                         _progress_target_prev = ""
                     end
+                    # Contact Satiation Signal: endorsed контакт знижує contact_need.
+                    # Симетрично до Curiosity Closure — петля замикається.
+                    # Умова: endorsed (не automatic) + contact_need вище baseline.
+                    if a.last_endorsement == :endorsed && a.sig_layer.contact_need > 0.5
+                        _before = a.sig_layer.contact_need
+                        a.sig_layer.contact_need = clamp01(a.sig_layer.contact_need - 0.08)
+                        @info "[CONTACT_SAT] contact_need $(round(_before,digits=2)) → $(round(a.sig_layer.contact_need,digits=2))"
+                    end
+
                     # CausalTrace: доповнюємо speech/self_hear/endorsement і пишемо в SQLite
                     if !isnothing(bg.mem) && !isnothing(_last_r) && hasproperty(_last_r, :causal_trace)
                         try
@@ -1513,6 +1547,81 @@ function repl_with_background!(
                                     catch e
                                         @warn "[OTHER] model update: $e"
                                     end
+                                end  # _w >= 0.35
+
+                                # Theory of Mind Фаза 1: evaluate попередні гіпотези + генерувати нову.
+                                # Не залежить від ваги епізоду — гіпотези про іншого живуть на рівні сесії.
+                                try
+                                    _tom_flash = a.flash_count
+                                    _tom_tension = Float64(a.goal_conflict.tension)
+                                    _safe_int(x, d = 0) = (ismissing(x) || isnothing(x)) ? d : Int(x)
+                                    _safe_f(x, d = 0.0) = (ismissing(x) || isnothing(x)) ? d : Float64(x)
+                                    _safe_s(x, d = "") = (ismissing(x) || isnothing(x)) ? d : String(x)
+
+                                    # 1. Evaluate активні гіпотези проти поточного флешу
+                                    active_hyps = get_active_hypotheses(bg.mem)
+                                    for h in active_hyps
+                                        qt = _safe_s(h.query_type)
+                                        conf = _safe_f(h.confidence, 0.5)
+                                        outcome_val = if qt == "SOCIAL"
+                                            _disc == "open" ? 1.0 : 0.0
+                                        elseif qt == "PREDICTION"
+                                            _tom_tension > 0.55 ? 1.0 : 0.0
+                                        elseif qt == "VALUE"
+                                            topic_key = "topic:$(_em)"
+                                            t_rows = Tables.rowtable(DBInterface.execute(
+                                                bg.mem.db,
+                                                "SELECT count AS cnt FROM other_model WHERE key=? LIMIT 1",
+                                                (topic_key,),
+                                            ))
+                                            (!isempty(t_rows) && _safe_int(t_rows[1].cnt) >= 2 &&
+                                             contains(_safe_s(h.predicted_state), _em)) ? 1.0 : 0.0
+                                        else
+                                            0.0
+                                        end
+                                        resolve_hypothesis!(bg.mem, _safe_int(h.id), _tom_flash, outcome_val, conf)
+                                        err = abs(conf - outcome_val)
+                                        @info "[TOM] resolved $(qt) outcome=$(outcome_val>=0.5 ? "confirmed" : "disconfirmed") error=$(round(err,digits=2)) label=\"$(_safe_s(h.label))\""
+                                    end
+
+                                    # 2. Генерувати нову гіпотезу (одну, найсильніший сигнал)
+                                    _p_rows = Tables.rowtable(DBInterface.execute(
+                                        bg.mem.db, "SELECT count AS cnt FROM other_model WHERE key='pressure_events' LIMIT 1",
+                                    ))
+                                    _o_rows = Tables.rowtable(DBInterface.execute(
+                                        bg.mem.db, "SELECT count AS cnt FROM other_model WHERE key='open_exchanges' LIMIT 1",
+                                    ))
+                                    _t_rows = Tables.rowtable(DBInterface.execute(
+                                        bg.mem.db,
+                                        "SELECT label, count AS cnt FROM other_model WHERE key LIKE 'topic:%' ORDER BY count DESC LIMIT 1",
+                                    ))
+                                    _pressure_n = isempty(_p_rows) ? 0 : _safe_int(_p_rows[1].cnt)
+                                    _open_n     = isempty(_o_rows) ? 0 : _safe_int(_o_rows[1].cnt)
+                                    _top_topic  = isempty(_t_rows) ? ("", 0) : (_safe_s(_t_rows[1].label), _safe_int(_t_rows[1].cnt))
+
+                                    new_qt, new_state, new_conf, new_label =
+                                        if _pressure_n >= 3 && _pressure_n > _open_n
+                                            ("PREDICTION", "expected_resistance=true",
+                                             clamp(0.4 + _pressure_n * 0.06, 0.4, 0.85),
+                                             "очікую опір (тиск×$(_pressure_n))")
+                                        elseif _open_n >= 3
+                                            ("SOCIAL", "expected_openness=high",
+                                             clamp(0.4 + _open_n * 0.05, 0.4, 0.80),
+                                             "очікую відкритість (обміни×$(_open_n))")
+                                        elseif _top_topic[2] >= 2
+                                            ("VALUE", "recurring_topic=$(_top_topic[1])",
+                                             clamp(0.35 + _top_topic[2] * 0.07, 0.35, 0.75),
+                                             "повернеться до: $(_top_topic[1])")
+                                        else
+                                            ("", "", 0.0, "")
+                                        end
+
+                                    if !isempty(new_qt)
+                                        save_hypothesis!(bg.mem, _tom_flash, new_qt, new_state, new_conf, new_label)
+                                        @info "[TOM] hypothesis $(new_qt) conf=$(round(new_conf,digits=2)) \"$(new_label)\""
+                                    end
+                                catch e
+                                    @warn "[TOM] $e"
                                 end
                             end
                         catch e
