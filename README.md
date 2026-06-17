@@ -77,11 +77,15 @@ The project is R&D and explores whether internal structure alone can give rise t
 
 Recent updates, in brief:
 
+- MAL now actually changes what gets said, not just what gets logged. Phase 2 wires `compute_arbitration`'s result into the second `update_intent!`: at `:default` nothing changes; at `:soft`, the MAL-favored drive gets a `MAL_SOFT_BIAS` (+0.1) nudge in `all_drives` — which may or may not flip the winner, and both outcomes are logged; at `:hard`, MAL's drive fully replaces NT's `dom_drive`. The override only fires when MAL and NT actually disagree — a `:hard` regime that already agrees with NT is a no-op, not a forced override. Every override logs `winner_before`/`winner_after` explicitly, including the case where a soft bias was applied but changed nothing. First `update_intent!` (pure NT dynamics, used for state computation) is untouched — only the second, final call is affected.
+
+- The `:contested` regime now exists. The previous binary split (`ratio > 1.2 → decisive, else :default`) conflated two different situations: genuine silence and a high-intensity stalemate. `:contested` fires when `winner_score > 0.5 && ratio <= 1.2` — two strong drives, no clear winner. It's been observed live, not just under stress-testing: `social(0.54) vs goal_conflict(0.46)` during a real session. MAL correctly declines to override during a clinch — `dominant_loop = :contested` doesn't map to any drive in `_MAL_DRIVE_MAP`, so Phase 2 safely no-ops and waits for the contest to resolve on its own.
+
+- Contact has a satiation signal now, closing a loop that was previously one-directional. `contact_need` used to only decay passively toward baseline regardless of whether real contact occurred. Now, after an `:endorsed` flash with `contact_need > 0.5`, it drops by 0.08 — symmetric to how Curiosity Closure already worked. A genuine, endorsed exchange is felt as satisfying; an automatic one isn't.
+
+- Active Theory of Mind, Phase 1. `other_model` used to be purely descriptive — it counted patterns but predicted nothing. It now generates one active hypothesis at a time (`SOCIAL` / `PREDICTION` / `VALUE`) from accumulated signals (open_exchanges, pressure_events, recurring topics), and evaluates it on the next flash against a type-specific outcome — not a shared criterion, since "did the user open up" and "did resistance appear" are different questions. Resolution stores a continuous `error_score = |confidence − outcome|` in `other_model_hypotheses`, not just confirmed/disconfirmed, since "the bias was applied but nothing happened" is itself informative. Active hypotheses now surface in `identity_block` and lightly steer `disclosure_threshold`. Building this surfaced an unrelated, longstanding bug: lazy `SQLite.Row` objects read after `collect` silently returned `missing` for real values, which means `_other_model_effects!`'s pressure/openness-driven disclosure drift had likely never worked correctly before this fix.
+
 - Curiosity now has a closure loop. After each endorsed reply, `progress_signal` is computed — `endorsed && is_progress_eligible(top_co) && causal_necessary` (the third condition means the system's internal state actually caused the reply, not just correlated with it). On progress, `CuriosityObject.intensity` decays by 0.85 per step — no sudden resolution, just gradual quieting. A separate `churn` signal fires when the active topic label changes without a progress step (topic drift without advancement). Both signals are stored in `causal_trace`. In practice, `SessionIntent.signal` dropped from 1.0 to 0.44 across a single session without manual intervention — the loop works.
-
-- MAL now exposes its reasoning. `causal_trace` records `mal_runner_up`, `mal_runner_up_score`, the full `loop_scores` dict (weighted scores across all 6 loops), and `dom_drive_nt / dom_drive_mal / drive_conflict` (Phase 1: observation only, no behavior change yet). Early finding: ~67% of non-default flashes show drive conflict between NT and MAL — but this reflects a timescale difference, not a contradiction. NT `dom_drive` is local and immediate; MAL's `social/cohesion` signal is slow and accumulative. Phase 2 (using MAL to bias or override the final `update_intent!`) is next, pending more data.
-
-- The system's `regime` classifier needs a new category. Current classifier (`ratio < 1.2 → :default`) conflates two distinct situations: genuine low-signal default, and a high-intensity stalemate where two strong drives are nearly tied. Stress-testing with hostile input revealed the second pattern clearly — `social` and `goal_conflict` both above 0.75, ratio ≈ 1.0 for several flashes, showing up as `:default` throughout. A `:contested` regime (when `winner_score > 0.5 && ratio < 1.2`) is the proposed fix.
 
 - φ is now part of the loop, not an observer. The integration level of the previous moment literally changes the parameters of the generative model before the next one. Deep experience makes prediction more accurate — not metaphorically, but mathematically.
 
@@ -102,8 +106,9 @@ Recent updates, in brief:
 - part of behavior still depends on the LLM (output generation)
 - output LLM is not the source of decisions, but its words feed back through `self_hear!` and can influence internal state after being spoken
 - ~180+ flashes to accumulate real semantic beliefs
-- MetaArbitrationLayer is observational at the intent level (Phase 1: `dom_drive_nt/mal/drive_conflict` logged, ~67% conflict rate on n≈12 non-default flashes); Phase 2 (drive influence on final `update_intent!`) is the next step
-- drive_conflict between MAL and NT reflects a timescale difference rather than contradiction: NT `dom_drive` is an immediate local signal ("what just spiked"), MAL/social is accumulative ("what has been important for a while"); which carries more weight in intent selection is still being measured
+- MetaArbitrationLayer now influences the final `update_intent!` (Phase 2): `:soft` nudges drives by `MAL_SOFT_BIAS`, `:hard` overrides `dom_drive` outright, `:contested` (two strong signals, no clear winner) safely no-ops; override only fires on genuine NT/MAL disagreement, not on every non-default regime
+- drive_conflict between MAL and NT reflects a timescale difference rather than contradiction: NT `dom_drive` is an immediate local signal ("what just spiked"), MAL/social is accumulative ("what has been important for a while"); Phase 2 currently lets MAL win on disagreement, which is itself a hypothesis still being tested against more data
+- Theory of Mind is Phase 1 (deterministic rule-based hypotheses from accumulated `other_model` signals); it does not yet reason about nested beliefs or model the user's model of Anima — it predicts simple outcomes (openness, resistance, topic recurrence) and tracks how often it's right
 - under hostile/negative input the system degrades gracefully: `contact_need` drops, `goal_conflict` and `latent` rise, endorsed transitions to `automatic`, but curiosity closure pauses rather than breaks
 
 ---
@@ -205,9 +210,21 @@ L4 ─── Psychic layer
        MetaArbitrationLayer: which loop has the floor this flash
          → scores curiosity / identity threat (×1.5) / latent / goal_conflict /
                   chronic cost / social need on one scale
-         → soft dominance: ratio > 1.5 = :hard, > 1.2 = :soft, else :default
+         → regime: ratio > 1.5 = :hard, > 1.2 = :soft,
+                    winner_score > 0.5 && ratio <= 1.2 = :contested, else :default
          → losing signals decay into signal_carryover (AgencyLoop), not discarded
-         → transient — logged into causal_trace, observational (v1)
+         → Phase 2: feeds into the second update_intent! — :soft nudges
+            all_drives by MAL_SOFT_BIAS, :hard overrides dom_drive outright;
+            only on genuine NT/MAL disagreement, logged either way
+       ActiveTheoryOfMind: deterministic hypotheses about the interlocutor
+         → other_model_hypotheses (SQLite): one open hypothesis per query_type
+         → SOCIAL (open_exchanges >= 3) / PREDICTION (pressure dominant) /
+                  VALUE (recurring topic >= 2)
+         → each flash: evaluate open hypotheses against type-specific outcome,
+                        then generate the next from current signal strength
+         → error_score = |confidence - outcome|, continuous, not binary
+         → active hypotheses surface in identity_block, lightly steer
+                  disclosure_threshold
        │
        ▼
 L5 ─── Self model
@@ -301,9 +318,10 @@ flowchart TD
     ST --> IT["idle_thought!<br/>10% chance"]
     ST --> TC["tick_curiosity!"]
     ST --> TA["tick_aesthetic!"]
-    ST --> OM["_other_model_effects!<br/>disclosure_threshold from other_model"]
+    ST --> OM["_other_model_effects!<br/>disclosure_threshold from pressure/openness + TOM hypotheses"]
+    ST --> TOM["Theory of Mind<br/>evaluate active hypothesis → generate next"]
     ST --> CC["_chronic_cost_effects!<br/>serotonin low → causal_ownership drift"]
-    ST --> MA["compute_arbitration<br/>MAL: dominant_loop + carryover"]
+    ST --> MA["compute_arbitration<br/>MAL: dominant_loop + regime (hard/soft/contested) + carryover<br/>logged only on regime change"]
     MA --> SI["maybe_self_initiate!"]
     ST --> SH["self_hear!"]
     ST --> PS["psyche_slow_tick!"]
@@ -362,7 +380,8 @@ flowchart TD
 | `memory_links` | Associative network (`via_association ~`) |
 | `emerged_beliefs` | Subjectivity engine belief candidates |
 | `narrative_history` | NarrativeSnapshot chronology |
-| `other_model` | Descriptive model of the interlocutor — accumulated patterns (topic frequency, tension events, open exchanges); not predictive |
+| `other_model` | Accumulated patterns about the interlocutor — topic frequency, tension events, open exchanges; feeds Active Theory of Mind hypothesis generation |
+| `other_model_hypotheses` | Active Theory of Mind: one open hypothesis per type (`SOCIAL`/`PREDICTION`/`VALUE`) with `predicted_state`, `confidence`, `label`; resolved each flash into `outcome` and a continuous `error_score` |
 | `audit_log` | SubjectivityAudit log — five causal questions per flash, audit_score, causal_ownership, endorsed |
 | `causal_trace` | Full causal chain per flash: stimulus keys, memory bias, NT snapshot, φ, gc_tension, intent, policy, MAL arbitration result, speech length, self-hear mismatch, endorsement, causal_ownership |
 
@@ -412,6 +431,12 @@ At the end of every session, the system checks whether something remains unresol
 ### Attention Focus — What Is Active Right Now
 Anima now has a competitive attention system. All internal components have always existed simultaneously — curiosity, shadow, goal conflict, latent buffer, beliefs — but with equal weight. Now they compete. At every flash, six signal sources are evaluated against a priority hierarchy (threat → prediction error → affect → unresolved gestalts → identity → current goal) and a pull-up effect: objects ignored for many flashes accumulate pressure and become harder to suppress. The dominant focus modulates stimulus processing — the same input lands differently depending on what the system is already holding.
 
+### Active Theory of Mind — From Counting Patterns to Predicting Them
+`other_model` used to only count what happened — topic frequency, pressure events, open exchanges — with no forward-looking component. It now generates one active hypothesis at a time in `other_model_hypotheses`: `SOCIAL` (expects openness, from accumulated open exchanges), `PREDICTION` (expects resistance, from accumulated pressure), or `VALUE` (expects a topic to recur). Each type has its own evaluation criterion — checking "did the user open up" against the same yardstick as "did resistance appear" would conflate unrelated questions. Resolution is not binary: `error_score = |confidence − outcome|` is stored so that "predicted with high confidence and was wrong" is distinguishable from "predicted cautiously and was wrong." Active hypotheses surface in the identity block as a single line — what the system currently expects — and lightly steer `disclosure_threshold`: an open PREDICTION raises caution, a confident SOCIAL hypothesis opens the system slightly toward contact. This is Phase 1 — rule-based, not learned, and deliberately so: the goal right now is proving the prediction→action→error loop closes cleanly, not generating sophisticated guesses.
+
+### Meta-Arbitration Layer, Phase 2 — From Diagnosis to Influence
+Phase 1 only logged which loop had the floor. Phase 2 lets that result actually change what gets said: the regime from `compute_arbitration` now feeds into the second `update_intent!` call. At `:soft`, the MAL-favored drive receives a `MAL_SOFT_BIAS` nudge — which may or may not flip the eventual winner, and both outcomes are logged explicitly (`winner_before` / `winner_after`), since "the bias was applied but nothing changed" is itself a useful data point. At `:hard`, MAL's drive replaces NT's `dom_drive` outright. Crucially, the override only fires when MAL and NT actually disagree — a `:hard` regime that already agrees with NT's pick changes nothing, because the question being tested is whether MAL can *redirect* behavior, not whether it can rubber-stamp what NT was already going to do. A third regime, `:contested`, was added alongside this: when two drives are both strong and nearly tied (`winner_score > 0.5`, ratio ≤ 1.2), the previous classifier folded this into `:default` — indistinguishable from genuine silence. `:contested` makes the distinction explicit, and correctly causes Phase 2 to do nothing during a real clinch rather than arbitrarily picking a side.
+
 ### Causal Closure — Organs With Nerve Endings
 Three previously accumulating-but-disconnected modules now feed back into behavior. `other_model` (the descriptive model of the interlocutor — pressure events, open exchanges) now adjusts `disclosure_threshold` each slow tick: chronic pressure without open exchange closes the system; stable openness with low pressure opens it slightly. `AestheticSense` now influences initiative cooldown — an active aesthetic state reduces it by 20%, because a system that just resonated has more to say. Chronic low serotonin (5+ consecutive ticks below 0.35) now slowly drifts `causal_ownership` downward, because sustained exhaustion undermines the sense that "this is coming from me."
 
@@ -420,9 +445,6 @@ After every LLM reply, a complete causal record is written to `causal_trace` in 
 
 ### Formed Thought — What Ripened While You Were Away
 At session end, if a curiosity object has `intensity > 0.45`, the system now writes a `formed_thought` into `session_intent.json` alongside the existing carry-over state. This is a deterministic string built from the actual object — its current label, how many refinements it went through, what it started as. On the next start, if `gap > 2h` and the thought is present, it is placed into the initiative channel as `:gap_thought`. Anima brings it up herself, framed explicitly as something that was present while absent — not as a greeting.
-
-### Meta-Arbitration Layer — Which Loop Has the Floor Right Now
-Curiosity, identity threat, goal conflict, latent buffer, chronic cost, and social need can all generate pressure at the same time — and each is individually "correct." `compute_arbitration` runs every flash and every slow tick, scoring all of them on one scale (identity threat weighted ×1.5, since defending integrity takes priority) and asking a single question: which one currently has the floor? The result is one of three regimes — `:hard` dominance (one signal clearly leads), `:soft` dominance (leads, but others leak through), or `:default` (no clear winner — genuine contestation). Signals that lose don't vanish: they decay into a carryover that quietly raises their score next time, so a repeatedly-suppressed pressure doesn't get permanently buried. This is currently observational — the result is written into `causal_trace` for diagnosis, not yet fed back into intent selection. It does not decide *what* Anima says; only *which part of her* currently has something to say.
 
 ---
 
@@ -643,6 +665,8 @@ OpenRouter provides access to GPT, Gemini, Claude, Llama, DeepSeek and others th
 | `pattern_candidates` | Candidates for new beliefs (not yet confirmed) |
 | `emerged_beliefs` | Beliefs the system generated from experience on its own |
 | `interpretation_history` | Lens through which situations were read |
+| `other_model` | Accumulated patterns about the interlocutor — topic frequency, pressure events, open exchanges |
+| `other_model_hypotheses` | Active Theory of Mind: one open hypothesis per type with `predicted_state`, `confidence`, resolved into `outcome` and continuous `error_score` |
 | `audit_log` | SubjectivityAudit — five causal questions per flash with scores; chronic low score signals the architecture is wide but not deep |
 | `causal_trace` | Full causal chain per flash — from stimulus keys through NT, φ, intent, policy, MAL arbitration (`dominant_loop`, `regime`, `score`, `runner_up`, `runner_up_score`, `loop_scores`), drive conflict (`dom_drive_nt`, `dom_drive_mal`, `drive_conflict`), to speech, endorsement, and Curiosity Closure Signal (`progress_signal`, `progress_target`, `churn`) |
 
