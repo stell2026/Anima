@@ -2402,6 +2402,10 @@ const _MAL_DRIVE_MAP = Dict(
     :latent        => "tension",
 )
 
+# Фаза 2: сила м'якого зміщення drives при :soft режимі.
+# Змінювати тут — не шукати літерал по коду.
+const MAL_SOFT_BIAS = 0.1
+
 # Carryover: decay 0.85/тік, leak від нового score переможця не додається —
 # тільки накопичення програшів. Cap 1.0 щоб не зростав необмежено.
 function _update_carryover!(carryover::Dict{Symbol,Float64}, scores::Dict{Symbol,Float64}, winner::Symbol)
@@ -2477,7 +2481,11 @@ function compute_arbitration(a)::ArbitrationResult
     winner, winner_score = sorted_loops[1]
     runner_up, runner_up_score = sorted_loops[2]
 
-    # Soft dominance regime: ratio winner/runner_up визначає режим
+    # Regime classification:
+    # :hard      — один переможець з великим відривом (ratio > 1.5)
+    # :soft      — один переможець з помірним відривом (ratio > 1.2)
+    # :contested — два сильні сигнали в гострому клінчі (winner_score > 0.5, ratio ≤ 1.2)
+    # :default   — або все тихо (winner_score < 0.05), або слабка невизначеність
     ratio = runner_up_score > 1e-6 ? winner_score / runner_up_score : Inf
     if winner_score < 0.05
         regime = :default
@@ -2491,6 +2499,12 @@ function compute_arbitration(a)::ArbitrationResult
         regime = :soft
         dominant = winner
         det = determinants[winner]
+    elseif winner_score > 0.5
+        # Два сильні сигнали без переможця — гострий клінч, не тиша.
+        # dominant = :contested (не один loop), пара видна через runner_up.
+        regime = :contested
+        dominant = :contested
+        det = "клінч: $(winner)($(round(winner_score, digits=2))) vs $(runner_up)($(round(runner_up_score, digits=2)))"
     else
         regime = :default
         dominant = :default
