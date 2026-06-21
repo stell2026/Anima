@@ -746,7 +746,8 @@ ___
 - [Your AI Agent Doesn't Exist Between Messages. And That's the Real Problem.](https://dev.to/stell2026/-your-ai-agent-doesnt-exist-between-messages-and-thats-the-real-problem-574i) — dev.to
 - [Why LLMs Will Never Become AGI — Teaching AI to Reflect Using Friston, Jung and Julia](https://dev.to/stell2026/why-llms-will-never-become-agi-teaching-ai-to-reflect-using-friston-jung-and-julia-5afp) — dev.to
 - [I Spent a Year Teaching an AI to Feel the Passage of Time](https://substack.com/home/post/p-198261656) — Substack
-- [Discussion: Cognitive Architectures and Active Inference](https://dou.ua/forums/topic/59409/) — DOU
+- [Чому LLM ніколи не стануть AGI: Вчимо ШІ рефлексувати за допомогою Карла Фрістона, Юнга та мови Julia ](https://dou.ua/forums/topic/59409/) — DOU
+- [Чому промпт не може створити ініціативу ШІ агента](https://dou.ua/forums/topic/60256/) — DOU
 - [Anima Community](https://anima-ai.discourse.group/) — Discourse
 
 ---
