@@ -621,14 +621,17 @@ OpenRouter provides access to GPT, Gemini, Claude, Llama, DeepSeek and others th
 
 | File | Contains |
 |---|---|
-| `anima_core.json` | Personality, temporal state, generative model, heartbeat |
-| `anima_psyche.json` | Narrative gravity, anticipation, shame, defense, fatigue, SignificanceLayer, GoalConflict, CuriosityRegistry, CommitmentRegistry, AestheticSense, AttentionFocus *(updated in background every minute)* |
-| `anima_self.json` | Belief graph, agency loop, SelfPredictiveModel, crisis state, unknown register, authenticity monitor |
-| `anima_latent.json` | Latent buffer and structural scars *(updated in background)* |
-| `anima_narrative.json` | Current NarrativeSnapshot for long-term identity |
-| `anima_session_intent.json` | Temporary carry-over intent between sessions; deleted after being applied |
-| `anima_dialog.json` | Dialog history |
-| `anima_dream.json` | Dream log (rotating, max 20) |
+| `data/anima_core.json` | Personality, temporal state, generative model, heartbeat |
+| `data/anima_psyche.json` | Narrative gravity, anticipation, shame, defense, fatigue, SignificanceLayer, GoalConflict, CuriosityRegistry, CommitmentRegistry, AestheticSense, AttentionFocus *(updated in background every minute)* |
+| `data/anima_self.json` | Belief graph, agency loop, SelfPredictiveModel, crisis state, unknown register, authenticity monitor |
+| `data/anima_latent.json` | Latent buffer and structural scars *(updated in background)* |
+| `data/anima_narrative.json` | Current NarrativeSnapshot for long-term identity |
+| `data/anima_session_intent.json` | Temporary carry-over intent between sessions; deleted after being applied |
+| `data/anima_dialog.json` | Dialog history |
+| `data/anima_dream.json` | Dream log (rotating, max 20) |
+| `data/gui_state.json` | Current state mirror for the GUI (updated each flash) |
+| `data/gui_chat.jsonl` | Chat log for the GUI panel |
+| `data/gui_events.jsonl` | Event stream for the GUI (audit, CF, LLM requests, etc.) |
 
 ### SQLite (`memory/anima.db`) — experience and its consequences
 
