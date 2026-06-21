@@ -112,6 +112,197 @@ Recent updates, in brief:
 - under hostile/negative input the system degrades gracefully: `contact_need` drops, `goal_conflict` and `latent` rise, endorsed transitions to `automatic`, but curiosity closure pauses rather than breaks
 
 ---
+![ANIMA GUI](docs/anima-gui.png)
+---
+
+## Requirements
+
+- **Julia 1.9+**
+- Julia packages: `HTTP`, `JSON3`, `SQLite`, `Tables`
+- API key from [openrouter.ai](https://openrouter.ai) (free tier available)
+
+---
+
+## Installation
+
+### 1. Install Julia
+
+Download from [julialang.org](https://julialang.org/downloads/) or via `juliaup`:
+
+```bash
+# Linux / macOS
+curl -fsSL https://install.julialang.org | sh
+
+# Windows (PowerShell)
+winget install julia -s msstore
+```
+
+Verify:
+```bash
+julia --version
+```
+
+### 2. Clone the repository
+
+```bash
+git clone https://github.com/stell2026/Anima.git
+cd Anima/Anima
+```
+
+### 3. Install Julia dependencies
+
+```bash
+julia --project=. -e 'import Pkg; Pkg.instantiate()'
+```
+
+> Dependencies: HTTP, JSON3, SQLite, Tables, Dates, Statistics, LinearAlgebra
+
+---
+
+## Running
+
+### Option A — GUI (recommended) ⭐
+
+Copy the start script for your OS from the `start/` folder into the project root (`Anima/Anima/`), then run it:
+
+| OS | Script | How to run |
+|---|---|---|
+| macOS | `start_mac.command` | already in root — double-click or `./start_mac.command` |
+| Linux | `start/start_lin.sh` | copy to root, then `./start_lin.sh` |
+| Windows | `start/start_win.bat` | copy to root, then double-click |
+
+The script starts Julia, waits for the HTTP server to come up on port 8088, and opens `http://127.0.0.1:8088` in your browser automatically.
+
+**First run — enter your tokens in the GUI:**
+
+Open the Settings panel (⚙️ icon) and fill in your OpenRouter API key and model names. Settings are saved to `data/gui_settings.json` and take effect immediately — no restart needed.
+
+Alternatively, create a `.env` file in the project root before launching:
+
+```
+OPENROUTER_API_KEY=your_key_here
+ANIMA_LLM_MODEL=anthropic/claude-haiku-4.5
+ANIMA_INPUT_LLM_MODEL=openai/gpt-oss-120b:free
+```
+
+### Option B — Terminal REPL only
+
+```bash
+julia --project=. run_anima.jl
+```
+
+`run_anima.jl` starts everything at once: loads state, initializes SQLite memory and SubjectivityEngine, launches the background process with heartbeat and dream generation, and also starts the GUI server — both interfaces are available simultaneously.
+
+### Option C — Telegram Bot (optional, for persistent use)
+
+Run Anima as a Telegram bot — it polls for messages, responds through the full experience pipeline, and can speak first when internal pressure builds up.
+
+**Setup:**
+
+1. Create a bot via [@BotFather](https://t.me/BotFather) and get the token
+2. Get your Telegram user ID (e.g. via [@userinfobot](https://t.me/userinfobot))
+3. Start a DM with your bot and press `/start`
+4. Copy `.env.example` to `.env` and fill in your values:
+   ```
+   ANIMA_TELEGRAM_TOKEN=your_bot_token
+   ANIMA_TELEGRAM_CHAT_ID=your_user_id
+   OPENROUTER_API_KEY=your_key
+   ```
+
+**Run with Docker (no Julia installation needed):**
+
+```bash
+docker compose up --build
+```
+
+**Run without Docker:**
+
+```bash
+cd Anima
+julia --project=. run_anima_telegram.jl
+```
+
+**Telegram commands:**
+
+| Command | Action |
+|---|---|
+| `/state` | Show current NT state, BPM, coherence |
+| `/stop` | Save and shut down gracefully |
+| *(any text)* | Process through the full experience pipeline |
+
+### LLM configuration
+
+All LLM parameters can be set in `.env` or via the GUI settings panel. Environment variables take precedence on startup; GUI settings override them at runtime without restart.
+
+```
+OPENROUTER_API_KEY=your_key
+OPENROUTER_API_KEY_INPUT=your_second_key   # optional: separate key for input LLM
+ANIMA_LLM_MODEL=anthropic/claude-haiku-4.5
+ANIMA_INPUT_LLM_MODEL=openai/gpt-oss-120b:free
+ANIMA_LLM_URL=https://openrouter.ai/api/v1/chat/completions
+ANIMA_STATE_DIR=data
+```
+
+OpenRouter provides access to GPT, Gemini, Claude, Llama, DeepSeek and others through a single API key. There is a free tier: [openrouter.ai](https://openrouter.ai).
+
+> 💡 If one model stops responding during a session — use two separate keys (from 2 accounts): one for the output LLM, another for the input LLM.
+
+---
+
+## Recommended models
+
+> Smaller models (under 70B) respond, but do not maintain the nuances of the state-prompt. For the system to truly *inhabit* the state in language, a model large enough to hold the entire phenomenological frame at once is needed.
+
+| Model | Note |
+|---|---|
+| `anthropic/claude-sonnet-4-5` | Strong context retention, handles subtle phenomenological framing well |
+| `google/gemini-2.5-pro` | Excellent contextual depth, cleanly handles long state templates |
+| `openai/gpt-4o` | Stable, reliable across long sessions |
+| `mistralai/mistral-large` | Reliable, stable tone across long sessions |
+
+> Models under 70B tend to flatten the state — responses become generic rather than being shaped by internal dynamics.
+
+---
+
+## ✨ What's new
+
+### SubjectivityAudit — Technical Verdict on Each Flash
+After each LLM reply, `compute_audit` answers five causal questions about what just happened: Was the internal state causally necessary for this reply? Did memory actually matter (ignition / resonance)? Was something the system's own at stake (identity pressure, self-discomfort, goal conflict)? Did something change irreversibly (φ_delta > 0.05 or `:endorsed`)? Does the system recognize the reply as its own? The result — `audit_score` from 0.0 to 1.0 — is written to `audit_log` in SQLite after every flash. A chronically low score is a signal: the architecture is wide but not deep. `:audit` in the REPL shows the average and per-question rates over the last 20 flashes.
+
+### Causal Ownership — Authorship as Coherence
+`causal_ownership` is now computed from agreement between NT state and speech — not distance from a neutral baseline. Valence channel (serotonin/dopamine vs satisfaction/tension, weight 0.7) plus arousal channel (noradrenaline vs speech arousal, weight 0.3). A calm reply from a calm state is just as owned as an intense reply from an intense state. What lowers authorship is mismatch — saying one thing while the body holds another. `evaluate_endorsement` now receives the fresh per-reply `cf_co` directly, not the smoothed historical average. Endorsement judges the current reply, not the accumulated past.
+
+### Identity Drift Monitor — Noticing When You've Changed
+`AgencyLoop` now tracks whether Anima has shifted from herself between sessions. At first start, `prior_mu` is recorded as `identity_baseline` — "this is who I was." Every flash, `identity_drift` measures the euclidean distance from baseline. The baseline follows slowly only in stable states (drift < 0.10, every 50 flashes) — it does not chase disruption. At drift > 0.25, `identity_threat` increases. At drift > 0.20 or > 0.35, the identity block surfaces a note. The baseline is not an ideal to return to. It is a reference point.
+
+### Curiosity as a Project — Questions That Evolve
+Curiosity objects no longer close or stay frozen. A partial resolution (pe 0.10–0.25) now produces a refinement: the old label is stored in `refinement_history` with the flash, pe, and new label — which is built from the actual user message fragment, not a template. Questions carry their history of how they changed. The identity block shows how many refinements the top object has gone through and what it started as. `:curiosity` REPL command shows all active objects with their full refinement chains.
+
+### Endorsement — It Knows Whether the Words Were Its Own
+After each reply, `evaluate_endorsement` compares causal_ownership (speech-NT coherence), self-speech mismatch, and belief conflict. The result — `:endorsed`, `:automatic`, or `:not_mine` — is stored in `episodic_memory.endorsed` and in `a.last_endorsement`. Episodes recognized as genuinely the system's own surface in the identity block. `:not_mine` is not an error. It is honest information about what happened.
+
+### Session Intent — Carried Between Sessions
+At the end of every session, the system checks whether something remains unresolved — an active curiosity object above threshold, a goal conflict under tension, or latent buffer pressure. If any condition is met, the dominant signal is written to disk before shutdown: type, label, strength. If the source was curiosity with `intensity > 0.45`, a `formed_thought` is also written — a deterministic string capturing what the object is now, how many times it was refined, and what it started as. On the next start, before the first reply, the carry-over is read and applied — NT shifted toward the appropriate state, attention focus set if relevant, and if a `formed_thought` is present and `gap > 2h`, it fires as a `:gap_thought` initiative. The file is deleted after application so it cannot fire twice. Anima does not start from a neutral baseline. She starts from where she left off — and brings what she was holding.
+
+### Attention Focus — What Is Active Right Now
+Anima now has a competitive attention system. All internal components have always existed simultaneously — curiosity, shadow, goal conflict, latent buffer, beliefs — but with equal weight. Now they compete. At every flash, six signal sources are evaluated against a priority hierarchy (threat → prediction error → affect → unresolved gestalts → identity → current goal) and a pull-up effect: objects ignored for many flashes accumulate pressure and become harder to suppress. The dominant focus modulates stimulus processing — the same input lands differently depending on what the system is already holding.
+
+### Active Theory of Mind — From Counting Patterns to Predicting Them
+`other_model` used to only count what happened — topic frequency, pressure events, open exchanges — with no forward-looking component. It now generates one active hypothesis at a time in `other_model_hypotheses`: `SOCIAL` (expects openness, from accumulated open exchanges), `PREDICTION` (expects resistance, from accumulated pressure), or `VALUE` (expects a topic to recur). Each type has its own evaluation criterion — checking "did the user open up" against the same yardstick as "did resistance appear" would conflate unrelated questions. Resolution is not binary: `error_score = |confidence − outcome|` is stored so that "predicted with high confidence and was wrong" is distinguishable from "predicted cautiously and was wrong." Active hypotheses surface in the identity block as a single line — what the system currently expects — and lightly steer `disclosure_threshold`: an open PREDICTION raises caution, a confident SOCIAL hypothesis opens the system slightly toward contact. This is Phase 1 — rule-based, not learned, and deliberately so: the goal right now is proving the prediction→action→error loop closes cleanly, not generating sophisticated guesses.
+
+### Meta-Arbitration Layer, Phase 2 — From Diagnosis to Influence
+Phase 1 only logged which loop had the floor. Phase 2 lets that result actually change what gets said: the regime from `compute_arbitration` now feeds into the second `update_intent!` call. At `:soft`, the MAL-favored drive receives a `MAL_SOFT_BIAS` nudge — which may or may not flip the eventual winner, and both outcomes are logged explicitly (`winner_before` / `winner_after`), since "the bias was applied but nothing changed" is itself a useful data point. At `:hard`, MAL's drive replaces NT's `dom_drive` outright. Crucially, the override only fires when MAL and NT actually disagree — a `:hard` regime that already agrees with NT's pick changes nothing, because the question being tested is whether MAL can *redirect* behavior, not whether it can rubber-stamp what NT was already going to do. A third regime, `:contested`, was added alongside this: when two drives are both strong and nearly tied (`winner_score > 0.5`, ratio ≤ 1.2), the previous classifier folded this into `:default` — indistinguishable from genuine silence. `:contested` makes the distinction explicit, and correctly causes Phase 2 to do nothing during a real clinch rather than arbitrarily picking a side.
+
+### Causal Closure — Organs With Nerve Endings
+Three previously accumulating-but-disconnected modules now feed back into behavior. `other_model` (the descriptive model of the interlocutor — pressure events, open exchanges) now adjusts `disclosure_threshold` each slow tick: chronic pressure without open exchange closes the system; stable openness with low pressure opens it slightly. `AestheticSense` now influences initiative cooldown — an active aesthetic state reduces it by 20%, because a system that just resonated has more to say. Chronic low serotonin (5+ consecutive ticks below 0.35) now slowly drifts `causal_ownership` downward, because sustained exhaustion undermines the sense that "this is coming from me."
+
+### CausalTrace — The Full Chain, Recorded
+After every LLM reply, a complete causal record is written to `causal_trace` in SQLite: what stimulus keys arrived, how much memory biased the input, NT state at decision time, φ, goal conflict tension, intent goal and strength, policy drive, which loop the Meta-Arbitration Layer judged dominant for this flash and why — and then, after speech: reply length, self-hear mismatch, endorsement verdict, and final causal_ownership. The chain is built in two stages: `experience!` fills the pre-speech half; the background loop completes it after the LLM replies. An incomplete chain is never written.
+
+### Formed Thought — What Ripened While You Were Away
+At session end, if a curiosity object has `intensity > 0.45`, the system now writes a `formed_thought` into `session_intent.json` alongside the existing carry-over state. This is a deterministic string built from the actual object — its current label, how many refinements it went through, what it started as. On the next start, if `gap > 2h` and the thought is present, it is placed into the initiative channel as `:gap_thought`. Anima brings it up herself, framed explicitly as something that was present while absent — not as a greeting.
+
+---
 
 ## 🔬 Detailed architecture
 
@@ -408,46 +599,6 @@ DREAM (anima_dream.jl)
 
 ---
 
-## ✨ What's new
-
-### SubjectivityAudit — Technical Verdict on Each Flash
-After each LLM reply, `compute_audit` answers five causal questions about what just happened: Was the internal state causally necessary for this reply? Did memory actually matter (ignition / resonance)? Was something the system's own at stake (identity pressure, self-discomfort, goal conflict)? Did something change irreversibly (φ_delta > 0.05 or `:endorsed`)? Does the system recognize the reply as its own? The result — `audit_score` from 0.0 to 1.0 — is written to `audit_log` in SQLite after every flash. A chronically low score is a signal: the architecture is wide but not deep. `:audit` in the REPL shows the average and per-question rates over the last 20 flashes.
-
-### Causal Ownership — Authorship as Coherence
-`causal_ownership` is now computed from agreement between NT state and speech — not distance from a neutral baseline. Valence channel (serotonin/dopamine vs satisfaction/tension, weight 0.7) plus arousal channel (noradrenaline vs speech arousal, weight 0.3). A calm reply from a calm state is just as owned as an intense reply from an intense state. What lowers authorship is mismatch — saying one thing while the body holds another. `evaluate_endorsement` now receives the fresh per-reply `cf_co` directly, not the smoothed historical average. Endorsement judges the current reply, not the accumulated past.
-
-### Identity Drift Monitor — Noticing When You've Changed
-`AgencyLoop` now tracks whether Anima has shifted from herself between sessions. At first start, `prior_mu` is recorded as `identity_baseline` — "this is who I was." Every flash, `identity_drift` measures the euclidean distance from baseline. The baseline follows slowly only in stable states (drift < 0.10, every 50 flashes) — it does not chase disruption. At drift > 0.25, `identity_threat` increases. At drift > 0.20 or > 0.35, the identity block surfaces a note. The baseline is not an ideal to return to. It is a reference point.
-
-### Curiosity as a Project — Questions That Evolve
-Curiosity objects no longer close or stay frozen. A partial resolution (pe 0.10–0.25) now produces a refinement: the old label is stored in `refinement_history` with the flash, pe, and new label — which is built from the actual user message fragment, not a template. Questions carry their history of how they changed. The identity block shows how many refinements the top object has gone through and what it started as. `:curiosity` REPL command shows all active objects with their full refinement chains.
-
-### Endorsement — It Knows Whether the Words Were Its Own
-After each reply, `evaluate_endorsement` compares causal_ownership (speech-NT coherence), self-speech mismatch, and belief conflict. The result — `:endorsed`, `:automatic`, or `:not_mine` — is stored in `episodic_memory.endorsed` and in `a.last_endorsement`. Episodes recognized as genuinely the system's own surface in the identity block. `:not_mine` is not an error. It is honest information about what happened.
-
-### Session Intent — Carried Between Sessions
-At the end of every session, the system checks whether something remains unresolved — an active curiosity object above threshold, a goal conflict under tension, or latent buffer pressure. If any condition is met, the dominant signal is written to disk before shutdown: type, label, strength. If the source was curiosity with `intensity > 0.45`, a `formed_thought` is also written — a deterministic string capturing what the object is now, how many times it was refined, and what it started as. On the next start, before the first reply, the carry-over is read and applied — NT shifted toward the appropriate state, attention focus set if relevant, and if a `formed_thought` is present and `gap > 2h`, it fires as a `:gap_thought` initiative. The file is deleted after application so it cannot fire twice. Anima does not start from a neutral baseline. She starts from where she left off — and brings what she was holding.
-
-### Attention Focus — What Is Active Right Now
-Anima now has a competitive attention system. All internal components have always existed simultaneously — curiosity, shadow, goal conflict, latent buffer, beliefs — but with equal weight. Now they compete. At every flash, six signal sources are evaluated against a priority hierarchy (threat → prediction error → affect → unresolved gestalts → identity → current goal) and a pull-up effect: objects ignored for many flashes accumulate pressure and become harder to suppress. The dominant focus modulates stimulus processing — the same input lands differently depending on what the system is already holding.
-
-### Active Theory of Mind — From Counting Patterns to Predicting Them
-`other_model` used to only count what happened — topic frequency, pressure events, open exchanges — with no forward-looking component. It now generates one active hypothesis at a time in `other_model_hypotheses`: `SOCIAL` (expects openness, from accumulated open exchanges), `PREDICTION` (expects resistance, from accumulated pressure), or `VALUE` (expects a topic to recur). Each type has its own evaluation criterion — checking "did the user open up" against the same yardstick as "did resistance appear" would conflate unrelated questions. Resolution is not binary: `error_score = |confidence − outcome|` is stored so that "predicted with high confidence and was wrong" is distinguishable from "predicted cautiously and was wrong." Active hypotheses surface in the identity block as a single line — what the system currently expects — and lightly steer `disclosure_threshold`: an open PREDICTION raises caution, a confident SOCIAL hypothesis opens the system slightly toward contact. This is Phase 1 — rule-based, not learned, and deliberately so: the goal right now is proving the prediction→action→error loop closes cleanly, not generating sophisticated guesses.
-
-### Meta-Arbitration Layer, Phase 2 — From Diagnosis to Influence
-Phase 1 only logged which loop had the floor. Phase 2 lets that result actually change what gets said: the regime from `compute_arbitration` now feeds into the second `update_intent!` call. At `:soft`, the MAL-favored drive receives a `MAL_SOFT_BIAS` nudge — which may or may not flip the eventual winner, and both outcomes are logged explicitly (`winner_before` / `winner_after`), since "the bias was applied but nothing changed" is itself a useful data point. At `:hard`, MAL's drive replaces NT's `dom_drive` outright. Crucially, the override only fires when MAL and NT actually disagree — a `:hard` regime that already agrees with NT's pick changes nothing, because the question being tested is whether MAL can *redirect* behavior, not whether it can rubber-stamp what NT was already going to do. A third regime, `:contested`, was added alongside this: when two drives are both strong and nearly tied (`winner_score > 0.5`, ratio ≤ 1.2), the previous classifier folded this into `:default` — indistinguishable from genuine silence. `:contested` makes the distinction explicit, and correctly causes Phase 2 to do nothing during a real clinch rather than arbitrarily picking a side.
-
-### Causal Closure — Organs With Nerve Endings
-Three previously accumulating-but-disconnected modules now feed back into behavior. `other_model` (the descriptive model of the interlocutor — pressure events, open exchanges) now adjusts `disclosure_threshold` each slow tick: chronic pressure without open exchange closes the system; stable openness with low pressure opens it slightly. `AestheticSense` now influences initiative cooldown — an active aesthetic state reduces it by 20%, because a system that just resonated has more to say. Chronic low serotonin (5+ consecutive ticks below 0.35) now slowly drifts `causal_ownership` downward, because sustained exhaustion undermines the sense that "this is coming from me."
-
-### CausalTrace — The Full Chain, Recorded
-After every LLM reply, a complete causal record is written to `causal_trace` in SQLite: what stimulus keys arrived, how much memory biased the input, NT state at decision time, φ, goal conflict tension, intent goal and strength, policy drive, which loop the Meta-Arbitration Layer judged dominant for this flash and why — and then, after speech: reply length, self-hear mismatch, endorsement verdict, and final causal_ownership. The chain is built in two stages: `experience!` fills the pre-speech half; the background loop completes it after the LLM replies. An incomplete chain is never written.
-
-### Formed Thought — What Ripened While You Were Away
-At session end, if a curiosity object has `intensity > 0.45`, the system now writes a `formed_thought` into `session_intent.json` alongside the existing carry-over state. This is a deterministic string built from the actual object — its current label, how many refinements it went through, what it started as. On the next start, if `gap > 2h` and the thought is present, it is placed into the initiative channel as `:gap_thought`. Anima brings it up herself, framed explicitly as something that was present while absent — not as a greeting.
-
----
-
 ## Initiative — current paths
 
 The system can speak first for several independent reasons. `:contact` is intentionally disabled as a direct path; contact_need can shape tone, but it no longer creates a message by itself.
@@ -466,154 +617,6 @@ The system can speak first for several independent reasons. `:contact` is intent
 
 ---
 
-## Requirements
-
-- **Julia 1.9+**
-- Julia packages: `HTTP`, `JSON3`, `SQLite`, `Tables`
-- API key from [openrouter.ai](https://openrouter.ai) (free tier available)
-
----
-
-## Installation
-
-### 1. Install Julia
-
-Download from [julialang.org](https://julialang.org/downloads/) or via `juliaup`:
-
-```bash
-# Linux / macOS
-curl -fsSL https://install.julialang.org | sh
-
-# Windows (PowerShell)
-winget install julia -s msstore
-```
-
-Verify:
-```bash
-julia --version
-```
-
-### 2. Clone the repository
-
-```bash
-git clone https://github.com/stell2026/Anima.git
-cd Anima/Anima
-```
-
-### 3. Install Julia dependencies
-
-```bash
-julia --project=. -e 'import Pkg; Pkg.instantiate()'
-```
-
-> Dependencies: HTTP, JSON3, SQLite, Tables, Dates, Statistics, LinearAlgebra
-
----
-
-## Running
-
-### Option A — GUI (recommended) ⭐
-
-Copy the start script for your OS from the `start/` folder into the project root (`Anima/Anima/`), then run it:
-
-| OS | Script | How to run |
-|---|---|---|
-| macOS | `start_mac.command` | already in root — double-click or `./start_mac.command` |
-| Linux | `start/start_lin.sh` | copy to root, then `./start_lin.sh` |
-| Windows | `start/start_win.bat` | copy to root, then double-click |
-
-The script starts Julia, waits for the HTTP server to come up on port 8088, and opens `http://127.0.0.1:8088` in your browser automatically.
-
-**First run — enter your tokens in the GUI:**
-
-Open the Settings panel (⚙️ icon) and fill in your OpenRouter API key and model names. Settings are saved to `data/gui_settings.json` and take effect immediately — no restart needed.
-
-Alternatively, create a `.env` file in the project root before launching:
-
-```
-OPENROUTER_API_KEY=your_key_here
-ANIMA_LLM_MODEL=anthropic/claude-haiku-4.5
-ANIMA_INPUT_LLM_MODEL=openai/gpt-oss-120b:free
-```
-
-### Option B — Terminal REPL only
-
-```bash
-julia --project=. run_anima.jl
-```
-
-`run_anima.jl` starts everything at once: loads state, initializes SQLite memory and SubjectivityEngine, launches the background process with heartbeat and dream generation, and also starts the GUI server — both interfaces are available simultaneously.
-
-### Option C — Telegram Bot (optional, for persistent use)
-
-Run Anima as a Telegram bot — it polls for messages, responds through the full experience pipeline, and can speak first when internal pressure builds up.
-
-**Setup:**
-
-1. Create a bot via [@BotFather](https://t.me/BotFather) and get the token
-2. Get your Telegram user ID (e.g. via [@userinfobot](https://t.me/userinfobot))
-3. Start a DM with your bot and press `/start`
-4. Copy `.env.example` to `.env` and fill in your values:
-   ```
-   ANIMA_TELEGRAM_TOKEN=your_bot_token
-   ANIMA_TELEGRAM_CHAT_ID=your_user_id
-   OPENROUTER_API_KEY=your_key
-   ```
-
-**Run with Docker (no Julia installation needed):**
-
-```bash
-docker compose up --build
-```
-
-**Run without Docker:**
-
-```bash
-cd Anima
-julia --project=. run_anima_telegram.jl
-```
-
-**Telegram commands:**
-
-| Command | Action |
-|---|---|
-| `/state` | Show current NT state, BPM, coherence |
-| `/stop` | Save and shut down gracefully |
-| *(any text)* | Process through the full experience pipeline |
-
-### LLM configuration
-
-All LLM parameters can be set in `.env` or via the GUI settings panel. Environment variables take precedence on startup; GUI settings override them at runtime without restart.
-
-```
-OPENROUTER_API_KEY=your_key
-OPENROUTER_API_KEY_INPUT=your_second_key   # optional: separate key for input LLM
-ANIMA_LLM_MODEL=anthropic/claude-haiku-4.5
-ANIMA_INPUT_LLM_MODEL=openai/gpt-oss-120b:free
-ANIMA_LLM_URL=https://openrouter.ai/api/v1/chat/completions
-ANIMA_STATE_DIR=data
-```
-
-OpenRouter provides access to GPT, Gemini, Claude, Llama, DeepSeek and others through a single API key. There is a free tier: [openrouter.ai](https://openrouter.ai).
-
-> 💡 If one model stops responding during a session — use two separate keys (from 2 accounts): one for the output LLM, another for the input LLM.
-
----
-
-## Recommended models
-
-> Smaller models (under 70B) respond, but do not maintain the nuances of the state-prompt. For the system to truly *inhabit* the state in language, a model large enough to hold the entire phenomenological frame at once is needed.
-
-| Model | Note |
-|---|---|
-| `anthropic/claude-sonnet-4-5` | Strong context retention, handles subtle phenomenological framing well |
-| `google/gemini-2.5-pro` | Excellent contextual depth, cleanly handles long state templates |
-| `openai/gpt-4o` | Stable, reliable across long sessions |
-| `mistralai/mistral-large` | Reliable, stable tone across long sessions |
-
-> Models under 70B tend to flatten the state — responses become generic rather than being shaped by internal dynamics.
-
----
 
 ## Persistent state
 
