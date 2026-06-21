@@ -553,6 +553,11 @@ function apply_recall_ignition!(a::Anima, hit::NamedTuple)
             external_intensity = clamp(strength * 0.9, 0.0, 1.0),
         )
         @info "[IGNITION:FULL] recalled=$(hit.emotion) sim=$(round(sim,digits=2)) w=$(round(w,digits=2)) gap=$(round(recall_gap,digits=2)) source=$(hit.recalled_source)"
+        push_gui_event!("ignition", Dict(
+            "mode" => "FULL", "recalled" => string(hit.emotion),
+            "sim" => sim, "w" => w, "gap" => recall_gap,
+            "source" => string(hit.recalled_source),
+        ))
     else
         # Фоновий шепіт: м'який вплив як раніше
         ignition_weight = clamp(strength * 0.4, 0.0, 0.28)
@@ -571,6 +576,10 @@ function apply_recall_ignition!(a::Anima, hit::NamedTuple)
             external_intensity = clamp(strength * 0.7, 0.0, 1.0),
         )
         @info "[IGNITION:soft] recalled=$(hit.emotion) sim=$(round(sim,digits=2)) w=$(round(w,digits=2)) source=$(hit.recalled_source)"
+        push_gui_event!("ignition", Dict(
+            "mode" => "soft", "recalled" => string(hit.emotion),
+            "sim" => sim, "w" => w, "source" => string(hit.recalled_source),
+        ))
     end
 
     # Тілесний спогад → тілесна реакція (обидва режими)
@@ -1095,12 +1104,26 @@ function experience!(
                   "MAL=$(_mal_drive) +$(MAL_SOFT_BIAS) | " *
                   "winner_before=$(isnothing(_dom_drive_before) ? "none" : _dom_drive_before) " *
                   "winner_after=$(_winner_after)"
+            push_gui_event!("mal_override", Dict(
+                "subkind" => "soft_bias",
+                "nt" => isnothing(dom_drive) ? "none" : string(dom_drive),
+                "mal" => string(_mal_drive),
+                "winner_before" => isnothing(_dom_drive_before) ? "none" : string(_dom_drive_before),
+                "winner_after" => string(_winner_after),
+            ))
         elseif _arb.regime == :hard
             _mal_bias_applied = "hard_override"
             @info "[MAL_OVERRIDE] hard override: NT=$(isnothing(dom_drive) ? "none" : dom_drive) " *
                   "→ MAL=$(_mal_drive) | " *
                   "winner_before=$(isnothing(_dom_drive_before) ? "none" : _dom_drive_before) " *
                   "winner_after=$(_mal_drive)"
+            push_gui_event!("mal_override", Dict(
+                "subkind" => "hard_override",
+                "nt" => isnothing(dom_drive) ? "none" : string(dom_drive),
+                "mal" => string(_mal_drive),
+                "winner_before" => isnothing(_dom_drive_before) ? "none" : string(_dom_drive_before),
+                "winner_after" => string(_mal_drive),
+            ))
             dom_drive = _mal_drive
         end
     end
@@ -1407,6 +1430,7 @@ function experience!(
     )
 
     log_flash(result)
+    write_gui_state!(a, result)
     save!(a)  # автозбереження
     result
 end
@@ -2540,6 +2564,7 @@ function llm_async(
                 ),
             )
         @info "[LLM] запит: модель=$model, розмір body=$(length(body)) байт"
+        push_gui_event!("llm_request", Dict("model" => model, "body_size" => length(body)))
         max_retries = 3
         last_err = nothing
         for attempt = 1:max_retries

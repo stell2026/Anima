@@ -45,6 +45,9 @@ include("anima_interface.jl")
 include("anima_subjectivity.jl")
 include("anima_dream.jl")
 include("anima_background.jl")
+include("anima_gui_bridge.jl")
+include("anima_gui_settings.jl")
+include("anima_gui_server.jl")
 
 anima = Anima(
     core_mem_path = anima_state_path("anima_core.json"),
@@ -73,6 +76,6 @@ repl_with_background!(
     llm_model = get(ENV, "ANIMA_LLM_MODEL", "anthropic/claude-haiku-4.5"),
     llm_key = get(ENV, "OPENROUTER_API_KEY", ""),
     use_input_llm = true,
-    input_llm_model = get(ENV, "ANIMA_INPUT_LLM_MODEL", get(ENV, "ANIMA_LLM_MODEL", "anthropic/claude-haiku-4.5")),
+    input_llm_model = get(ENV, "ANIMA_INPUT_LLM_MODEL", get(ENV, "ANIMA_LLM_MODEL", "openai/gpt-oss-120b:free")),
     input_llm_key = get(ENV, "OPENROUTER_API_KEY_INPUT", get(ENV, "OPENROUTER_API_KEY", "")),
 )

@@ -1,0 +1,108 @@
+# anima_gui_server.jl
+# HTTP-сервер (через уже наявний HTTP.jl) для повноцінного веб-інтерфейсу:
+# - GET  /            — anima_console.html
+# - GET  /api/state    — поточний gui_state.json
+# - GET  /api/events   — gui_events.jsonl, ?since=N (N — скільки рядків клієнт вже має)
+# - GET  /api/chat      — gui_chat.jsonl, той самий ?since=N
+# - POST /api/send      — {"text": "..."} → кладе в input_queue, той самий канал, що й термінал
+
+function gui_jsonl_since(path::String, since::Int)
+    lines = isfile(path) ? readlines(path) : String[]
+    start = clamp(since + 1, 1, length(lines) + 1)
+    items = lines[start:end]
+    "[" * join(items, ",") * "]"
+end
+
+function gui_query_since(req)
+    try
+        uri = HTTP.URI(req.target)
+        q = HTTP.queryparams(uri)
+        parse(Int, get(q, "since", "0"))
+    catch
+        0
+    end
+end
+
+function start_gui_server!(input_queue::Channel{String}; port::Int = 8088, dir::String = @__DIR__)
+    router = HTTP.Router()
+
+    HTTP.register!(router, "GET", "/", req -> begin
+        html_path = joinpath(dir, "anima_console.html")
+        if isfile(html_path)
+            HTTP.Response(200, ["Content-Type" => "text/html; charset=utf-8"], read(html_path))
+        else
+            HTTP.Response(404, "anima_console.html не знайдено в $(dir)")
+        end
+    end)
+
+    HTTP.register!(router, "GET", "/api/state", req -> begin
+        body = isfile(GUI_STATE_PATH) ? read(GUI_STATE_PATH) : "{}"
+        HTTP.Response(200, ["Content-Type" => "application/json"], body)
+    end)
+
+    HTTP.register!(router, "GET", "/api/events", req -> begin
+        body = gui_jsonl_since(GUI_EVENTS_PATH, gui_query_since(req))
+        HTTP.Response(200, ["Content-Type" => "application/json"], body)
+    end)
+
+    HTTP.register!(router, "GET", "/api/chat", req -> begin
+        body = gui_jsonl_since(GUI_CHAT_PATH, gui_query_since(req))
+        HTTP.Response(200, ["Content-Type" => "application/json"], body)
+    end)
+
+    HTTP.register!(router, "POST", "/api/send", req -> begin
+        try
+            payload = JSON3.read(String(req.body))
+            text = String(get(payload, "text", ""))
+            isempty(strip(text)) || put!(input_queue, text)
+            HTTP.Response(200, ["Content-Type" => "application/json"], "{\"ok\":true}")
+        catch e
+            HTTP.Response(400, ["Content-Type" => "application/json"], "{\"ok\":false,\"error\":\"$(e)\"}")
+        end
+    end)
+
+    HTTP.register!(router, "GET", "/api/live", req -> begin
+        a = _GUI_ANIMA[]
+        if isnothing(a)
+            return HTTP.Response(503, ["Content-Type" => "application/json"], "{\"error\":\"not ready\"}")
+        end
+        try
+            state = gui_live_state(a)
+            HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(state))
+        catch e
+            HTTP.Response(500, ["Content-Type" => "application/json"],
+                JSON3.write(Dict("error" => sprint(showerror, e))))
+        end
+    end)
+
+    HTTP.register!(router, "POST", "/api/cmd", req -> begin
+        try
+            payload = JSON3.read(String(req.body))
+            cmd = String(get(payload, "cmd", ""))
+            if isempty(strip(cmd))
+                return HTTP.Response(400, ["Content-Type" => "application/json"], "{\"ok\":false,\"error\":\"empty cmd\"}")
+            end
+            result = execute_gui_cmd(cmd)
+            HTTP.Response(200, ["Content-Type" => "text/plain; charset=utf-8"], result)
+        catch e
+            HTTP.Response(500, ["Content-Type" => "application/json"], "{\"ok\":false,\"error\":\"$(e)\"}")
+        end
+    end)
+
+    HTTP.register!(router, "GET", "/api/settings", req -> begin
+        HTTP.Response(200, ["Content-Type" => "application/json"],
+            JSON3.write(gui_settings_to_dict(GUI_SETTINGS[])))
+    end)
+
+    HTTP.register!(router, "POST", "/api/settings", req -> begin
+        try
+            payload = JSON3.read(String(req.body), Dict{String,Any})
+            s = save_gui_settings!(payload)
+            HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(gui_settings_to_dict(s)))
+        catch e
+            HTTP.Response(400, ["Content-Type" => "application/json"], "{\"ok\":false,\"error\":\"$(e)\"}")
+        end
+    end)
+
+    HTTP.serve!(router, "127.0.0.1", port; verbose = false)
+end

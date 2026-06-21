@@ -764,9 +764,15 @@ UPDATE pattern_candidates SET promoted = 1 WHERE id = ?
         (pattern_id,),
     )
 
-    is_new && _bg_log_dispatch(
-        "  [SUBJ] Нове переконання: \"$(key)\" ($(belief_type), val=$(round(valence_bias, digits=2)))",
-    )
+    if is_new
+        _bg_log_dispatch(
+            "  [SUBJ] Нове переконання: \"$(key)\" ($(belief_type), val=$(round(valence_bias, digits=2)))",
+        )
+        push_gui_event!("belief", Dict(
+            "key" => key, "belief_type" => belief_type,
+            "val" => valence_bias, "flash" => flash,
+        ))
+    end
 
     if valence_bias < -0.4 && cl[:cp] > 0.5
         _upsert_semantic_subj!(

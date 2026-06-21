@@ -26,6 +26,8 @@
 
 include(joinpath(@__DIR__, "anima_audit.jl"))
 
+using Printf
+
 # --- Константи ------------------------------------------------------------
 
 const SLOW_TICK_INTERVAL = 60.0   # секунд між повільними тіками
@@ -680,6 +682,13 @@ function slow_tick!(
               "score=$(round(_slow_arb.score, digits=2)) det=$(_slow_arb.determinant) " *
               "runner_up=$(_slow_arb.runner_up)($(round(_slow_arb.runner_up_score, digits=3))) " *
               "scores=[$(_slow_loop_scores_str)]"
+        push_gui_event!("mal_regime_change", Dict(
+            "from" => String(_prev_mal_regime), "to" => String(_slow_arb.regime),
+            "dominant" => String(_slow_arb.dominant_loop), "score" => _slow_arb.score,
+            "determinant" => string(_slow_arb.determinant),
+            "runner_up" => string(_slow_arb.runner_up), "runner_up_score" => _slow_arb.runner_up_score,
+            "scores" => _slow_loop_scores_str,
+        ))
         !isnothing(bg) && (bg.last_mal_regime = _slow_arb.regime)
     else
         @debug "[MAL] $(String(_slow_arb.regime)) dominant=$(_slow_arb.dominant_loop) " *
@@ -1208,6 +1217,160 @@ end
 
 const _REPL_RUNNING = Threads.Atomic{Bool}(false)
 
+# Глобальні посилання на стан REPL — для виклику команд з HTTP-сервера
+const _GUI_ANIMA  = Ref{Any}(nothing)
+const _GUI_BG     = Ref{Any}(nothing)
+const _GUI_MEM    = Ref{Any}(nothing)
+const _GUI_SUBJ   = Ref{Any}(nothing)
+
+"""
+    execute_gui_cmd(cmd) -> String
+
+Виконати термінальну команду (`:bg`, `:memory`, ...) і повернути вивід як рядок.
+Викликається з HTTP-сервера напряму, минаючи input_queue і LLM-цикл.
+"""
+function execute_gui_cmd(cmd::String)::String
+    a    = _GUI_ANIMA[]
+    bg   = _GUI_BG[]
+    mem  = _GUI_MEM[]
+    subj = _GUI_SUBJ[]
+    isnothing(a) && return "[GUI_CMD] REPL ще не запущений."
+
+    io = IOBuffer()
+    try
+        if cmd == ":bg"
+            running = !bg.stop_signal[]
+            uptime  = round((time() - bg.started_at) / 60.0, digits = 1)
+            println(io, "\n  [BG] $(running ? "✓ активний" : "✗ зупинений") | Uptime: $(uptime)хв")
+            println(io, "  [BG] Тіків: $(bg.tick_count) | Повільних: $(bg.slow_tick_count)")
+            println(io, "  [BG] ♥ BPM=$(round(60000.0/a.heartbeat.period_ms,digits=1)) HRV=$(round(a.heartbeat.hrv,digits=3)) coh=$(round(a.crisis.coherence,digits=3))")
+            println(io, "  [BG] NT: D=$(round(a.nt.dopamine,digits=3)) S=$(round(a.nt.serotonin,digits=3)) N=$(round(a.nt.noradrenaline,digits=3))")
+            println(io, "  [BG] Allostatic=$(round(a.interoception.allostatic_load,digits=3)) mem=$(isnothing(bg.mem) ? "—" : "SQLite ✓")")
+        elseif cmd == ":memory"
+            if isnothing(mem)
+                println(io, "  [MEM] Пам'ять не підключена.")
+            else
+                snap = memory_snapshot(mem)
+                println(io, "\n  [MEM] Episodic=$(snap.episodic_count) Semantic=$(snap.semantic_count)")
+                println(io, "  [MEM] Stress=$(snap.stress) Anxiety=$(snap.anxiety) Motivation=$(snap.motivation)")
+                println(io, "  [MEM] Instability=$(snap.instability) Fragility=$(snap.fragility)")
+                println(io, "  [MEM] Latent pressure=$(snap.latent_pressure)")
+                isempty(snap.affect_note) || println(io, "  [MEM] $(snap.affect_note)")
+            end
+        elseif cmd == ":subj"
+            if isnothing(subj)
+                println(io, "  [SUBJ] Суб'єктність не підключена.")
+            else
+                snap = subj_snapshot(subj)
+                println(io, "\n  [SUBJ] Emerged beliefs=$(snap.emerged_beliefs) | Candidates=$(snap.pattern_candidates) | Stances=$(snap.stances)")
+                isempty(snap.top_beliefs)     || println(io, "  [SUBJ] Переконання: $(snap.top_beliefs)")
+                isempty(snap.dominant_stance) || println(io, "  [SUBJ] Домінантна позиція: $(snap.dominant_stance)")
+                println(io, "  [SUBJ] Surprise=$(snap.surprise_level) | Lens=$(isempty(snap.current_lens) ? "нейтральна" : snap.current_lens)")
+                println(io, "  [SUBJ] Активний прогноз: $(snap.active_prediction ? "так" : "ні")")
+            end
+        elseif cmd == ":state"
+            snap = nt_snapshot(a.nt)
+            vad  = to_vad(a.nt)
+            t_, _, _, c_ = to_reactors(a.nt)
+            phi  = compute_phi(a.iit, vad, t_, c_, a.sbg.attractor_stability,
+                               a.sbg.epistemic_trust, a.interoception.allostatic_load)
+            println(io, "\n  NT: D=$(snap.dopamine) S=$(snap.serotonin) N=$(snap.noradrenaline) → $(snap.levheim_state)")
+            println(io, "  ♥ $(round(60000.0/a.heartbeat.period_ms,digits=1))bpm HRV=$(round(a.heartbeat.hrv,digits=3)) coh=$(round(a.crisis.coherence,digits=3))")
+            println(io, "  Тіло: $(build_inner_voice(a.body, a.nt, Int(a.crisis.current_mode), phi, a.flash_count))")
+            println(io, "  Увага: $(a.attention.focus) | Shame=$(round(a.shame.level,digits=3)) Continuity=$(round(a.anchor.continuity,digits=3))")
+            println(io, "  SelfRelation: sd=$(round(a.agency.self_discomfort,digits=3)) sc=$(round(a.agency.self_coherence,digits=3))")
+        elseif cmd == ":vfe"
+            vad = to_vad(a.nt)
+            v   = compute_vfe(a.gen_model, vad)
+            pol = select_policy(a.gen_model, vad)
+            println(io, "\n  VFE=$(v.vfe) acc=$(v.accuracy) cplx=$(v.complexity) | $(vfe_note(v.vfe))")
+            println(io, "  Drive=$(pol.drive) EFE_act=$(pol.efe_action) EFE_perc=$(pol.efe_perception)")
+        elseif cmd == ":blanket"
+            bs = blanket_snapshot(a.blanket)
+            println(io, "\n  Sensory=$(bs.sensory)")
+            println(io, "  Internal=$(bs.internal)")
+            println(io, "  Integrity=$(bs.integrity)")
+        elseif cmd == ":hb"
+            hb = a.heartbeat
+            println(io, "\n  ♥ BPM=$(round(60000.0/hb.period_ms,digits=1)) HRV=$(round(hb.hrv,digits=3))")
+            println(io, "  Симп=$(round(hb.sympathetic_tone,digits=3)) Парасимп=$(round(hb.parasympathetic_tone,digits=3))")
+            println(io, "  coh=$(round(a.crisis.coherence,digits=3)) | Удари: $(hb.beat_count)")
+        elseif cmd == ":gravity"
+            f = compute_field(a.narrative_gravity, a.flash_count)
+            println(io, "\n  Gravity total=$(f.total) valence=$(f.valence)")
+            println(io, "  $(f.note)")
+        elseif cmd == ":anchor"
+            ea = a.anchor
+            println(io, "\n  Continuity=$(round(ea.continuity,digits=3)) Groundedness=$(round(ea.groundedness,digits=3))")
+            println(io, "  Last self: $(ea.last_self)")
+        elseif cmd == ":solom"
+            s = solom_snapshot(a.solomonoff)
+            println(io, "\n  $(s.insight) | Complexity=$(s.complexity)")
+        elseif cmd == ":self"
+            sbg = a.sbg
+            println(io, "\n  Self ($(length(sbg.beliefs)) beliefs) | Stability=$(round(sbg.attractor_stability,digits=3)) Trust=$(round(sbg.epistemic_trust,digits=3))")
+            for (name, b) in sort(collect(sbg.beliefs), by = kv -> -kv[2].centrality)
+                st = b.confidence < 0.15 ? "X" : b.confidence < 0.35 ? "!" : "v"
+                print(io, @sprintf("    [%s] %-30s conf=%.2f central=%.2f rigid=%.2f\n",
+                        st, name, b.confidence, b.centrality, b.rigidity))
+            end
+            println(io, "  $(derive_narrative(sbg))")
+        elseif cmd == ":crisis"
+            cs = crisis_snapshot(a.crisis, a.flash_count)
+            println(io, "\n  Mode: $(cs.mode_name) | Coherence=$(cs.coherence)")
+            println(io, "  $(cs.note)")
+        elseif cmd == ":curiosity"
+            objs = active_curiosities(a.curiosity_registry)
+            if isempty(objs)
+                println(io, "\n  [CURIOSITY] Активних об'єктів немає.")
+            else
+                println(io, "\n  [CURIOSITY] Активних: $(length(objs))")
+                for co in objs
+                    println(io, "  · $(co.label) | intensity=$(round(co.intensity,digits=2)) val=$(round(co.valence,digits=2)) activations=$(co.activation_count)")
+                end
+            end
+        elseif cmd == ":dreams"
+            log = load_dream_log()
+            recent = isempty(log) ? [] : log[max(1,length(log)-4):end]
+            if isempty(recent)
+                println(io, "\n  [DREAM] Снів ще немає.")
+            else
+                println(io, "\n  [DREAM] Останні $(length(recent)) снів:")
+                for d in recent
+                    narr  = get(d, "narrative", "—")
+                    src   = get(d, "source", "")
+                    phi   = get(d, "phi", 0.0)
+                    label = get(d, "emotion_label", "")
+                    tod   = get(d, "time_of_day", "")
+                    println(io, "  ──────────────────────────────────────────────")
+                    println(io, "  [СОН | $tod | φ=$(round(Float64(phi),digits=2)) | $label]")
+                    println(io, "  $(first(string(narr), 120))")
+                    isempty(string(src)) || println(io, "  Source: $(first(string(src), 80))")
+                end
+            end
+        elseif cmd == ":audit"
+            if isnothing(mem)
+                println(io, "  [AUDIT] Пам'ять не підключена.")
+            else
+                s = audit_summary(mem.db; last_n = 20)
+                if s.n == 0
+                    println(io, "  [AUDIT] Даних ще немає.")
+                else
+                    println(io, "\n  [AUDIT] Останні $(s.n) флешів:")
+                    println(io, "  score=$(s.avg_score)  causal=$(s.causal_rate)  mem_dep=$(s.memory_dep_rate)")
+                    println(io, "  stake=$(s.stake_rate)  irrev=$(s.irreversible_rate)  recognized=$(s.recognized_rate)")
+                    println(io, "  → $(s.note)")
+                end
+            end
+        else
+            println(io, "  [GUI_CMD] Невідома команда: $cmd")
+        end
+    catch e
+        println(io, "  [GUI_CMD] помилка: $e\n  $(sprint(showerror, e))")
+    end
+    return String(take!(io))
+end
+
 """
     repl_with_background!(a; mem=nothing, bg_verbose=false, kwargs...)
 
@@ -1318,6 +1481,12 @@ function repl_with_background!(
         verbose = bg_verbose,
     )
 
+    # реєструємо для HTTP /api/cmd
+    _GUI_ANIMA[] = a
+    _GUI_BG[]    = bg
+    _GUI_MEM[]   = mem
+    _GUI_SUBJ[]  = subj
+
     println("\n" * "═"^70)
     println("  🌀 A N I M A — REPL")
     subj_label = !isnothing(subj) ? " | 🧬 суб'єктність" : ""
@@ -1347,6 +1516,24 @@ function repl_with_background!(
     _last_had_ignition = false  # чи спрацював ignition на останньому флеші
     _progress_target_prev = ""  # label top_curiosity з попереднього флешу (Curiosity Closure)
 
+    # Єдина точка входу вводу: термінал і веб-інтерфейс кладуть рядки в один канал,
+    # головний цикл не дбає звідки рядок прийшов.
+    _input_queue = Channel{String}(64)
+    _terminal_reader = @async begin
+        while _REPL_RUNNING[]
+            try
+                print("You> ")
+                line = readline()
+                put!(_input_queue, line)
+            catch
+                break
+            end
+        end
+    end
+    gui_reset_session!()
+    gui_server = start_gui_server!(_input_queue; port = 8088)
+    println("  [GUI] Веб-інтерфейс: http://127.0.0.1:8088\n")
+
     try
         while true
             if !isnothing(pending_llm) && isready(pending_llm)
@@ -1356,6 +1543,9 @@ function repl_with_background!(
                 else
                     println("\nAnima [LLM]> $llm_reply\n")
                 end
+                push_gui_chat!("llm", llm_reply;
+                    flash = a.flash_count,
+                    meta = Dict("initiative" => pending_is_initiative))
                 if !startswith(llm_reply, "[LLM помилка")
                     # Аніма чує власні слова — не аналіз, а переживання
                     self_hear!(a, llm_reply)
@@ -1376,6 +1566,10 @@ function repl_with_background!(
                             end
                         end
                         @info "[CF] co=$(round(cf_co,digits=3)) agency_co=$(round(a.agency.causal_ownership,digits=3)) flash=$(a.flash_count)"
+                        push_gui_event!("cf", Dict(
+                            "co" => cf_co, "agency_co" => Float64(a.agency.causal_ownership),
+                            "flash" => a.flash_count,
+                        ))
                     end
                     # Endorsement: чи ці слова справді були моїми?
                     a.last_endorsement = evaluate_endorsement(a, llm_reply, cf_co)
@@ -1398,6 +1592,11 @@ function repl_with_background!(
                             )
                             save_audit!(bg.mem.db, _audit)
                             @info "[AUDIT] score=$(round(_audit.audit_score,digits=2)) co=$(round(_audit.causal_ownership,digits=2)) endorsed=$(_audit.endorsed)"
+                            push_gui_event!("audit", Dict(
+                                "score" => _audit.audit_score, "co" => _audit.causal_ownership,
+                                "endorsed" => string(_audit.endorsed), "flash" => a.flash_count,
+                            ))
+                            write_gui_state!(a, _last_r; audit = _audit, cf_co = cf_co)
                         catch e
                             @warn "[AUDIT] $e"
                         end
@@ -1478,6 +1677,7 @@ function repl_with_background!(
                                 progress_target     = _ct.progress_target,
                                 churn               = Int(_ct.churn),
                             ))
+                            write_gui_state!(a, _last_r; audit = _audit, cf_co = cf_co)
                         catch e
                             @warn "[CTRACE] $e"
                         end
@@ -1660,8 +1860,8 @@ $(dominant_note)"""
                     initiative_prompt,
                     history;
                     api_url = llm_url,
-                    model = input_llm_model,
-                    api_key = input_llm_key,
+                    model = isempty(GUI_SETTINGS[].input_model) ? input_llm_model : GUI_SETTINGS[].input_model,
+                    api_key = isempty(GUI_SETTINGS[].input_token) ? input_llm_key : GUI_SETTINGS[].input_token,
                     is_ollama = is_ollama,
                     want = "initiative",
                     mem_db = !isnothing(mem) ? mem : nothing,
@@ -1671,8 +1871,11 @@ $(dominant_note)"""
                 pending_is_initiative = true
             end
 
-            print("You> ")
-            line = readline()
+            if !isready(_input_queue)
+                sleep(0.15)
+                continue
+            end
+            line = take!(_input_queue)
             cmd = String(strip(line))
             isempty(cmd) && continue
 
@@ -1881,9 +2084,9 @@ $(dominant_note)"""
                     process_input(
                         cmd,
                         text_to_stimulus;
-                        input_model = input_llm_model,
+                        input_model = isempty(GUI_SETTINGS[].input_model) ? input_llm_model : GUI_SETTINGS[].input_model,
                         api_url = llm_url,
-                        api_key = input_llm_key,
+                        api_key = isempty(GUI_SETTINGS[].input_token) ? input_llm_key : GUI_SETTINGS[].input_token,
                     )
                 else
                     (text_to_stimulus(cmd), "fallback", "")
@@ -1949,6 +2152,7 @@ $(dominant_note)"""
                 _prev_body_tension  = a.body.muscle_tension
                 _prev_body_gut      = a.body.gut_feeling
                 _prev_body_hr       = a.body.heart_rate
+                push_gui_chat!("user", cmd; flash = a.flash_count)
                 r = experience!(a, stim; user_message = cmd, mem = mem)
                 _last_r = r
                 # ignition спрацьовує всередині experience! і логується через @info
@@ -2082,17 +2286,21 @@ $(dominant_note)"""
                 println(
                     "\nAnima $src_label [$(r.primary), φ=$(r.phi), ♥=$(bpm)bpm]> $(r.narrative)\n",
                 )
+                push_gui_chat!("felt", r.narrative;
+                    flash = r.flash_count,
+                    meta = Dict("label" => r.primary, "phi" => r.phi, "bpm" => bpm))
 
                 if use_llm
                     print("Anima [LLM, чекаю...]")
+                    push_gui_chat!("system", "⏳ Аніма формує відповідь (LLM)…"; flash = a.flash_count)
                     pending_user_msg = cmd
                     pending_llm = llm_async(
                         a,
                         cmd,
                         history;
                         api_url = llm_url,
-                        model = llm_model,
-                        api_key = llm_key,
+                        model = isempty(GUI_SETTINGS[].output_model) ? llm_model : GUI_SETTINGS[].output_model,
+                        api_key = isempty(GUI_SETTINGS[].output_token) ? llm_key : GUI_SETTINGS[].output_token,
                         is_ollama = is_ollama,
                         want = input_want,
                         mem_db = !isnothing(mem) ? mem : nothing,
@@ -2104,5 +2312,9 @@ $(dominant_note)"""
     finally
         !bg.stop_signal[] && stop_background!(bg)
         _REPL_RUNNING[] = false
+        try
+            HTTP.close(gui_server)
+        catch
+        end
     end
 end
