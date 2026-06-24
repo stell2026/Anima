@@ -502,6 +502,152 @@
       letter-spacing: 0.02em;
     }
 
+    /* ── PROJECT COMPONENTS LABEL ── */
+    .project-components-label {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      opacity: 0.55;
+      margin-bottom: 12px;
+      margin-top: 4px;
+    }
+
+    /* ── WHY ANIMA ── */
+    #why-anima { padding: 56px 0; }
+    .why-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .why-problem,
+    .why-answer {
+      background: var(--bg-card);
+      padding: 28px 24px;
+    }
+    .why-block-label {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--teal-hi);
+      opacity: 0.7;
+      margin-bottom: 14px;
+    }
+    .why-problem p,
+    .why-answer p {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.8;
+      margin-bottom: 12px;
+    }
+    .why-question {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 13px;
+      font-style: italic;
+      color: var(--text);
+      opacity: 0.75;
+      border-left: 2px solid var(--teal);
+      padding-left: 14px;
+      margin-top: 16px;
+    }
+    @media (max-width: 680px) {
+      .why-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ── RESEARCH PAPER CARD ── */
+    #paper { padding: 56px 0; }
+    .paper-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 28px 24px;
+      position: relative;
+      transition: border-color 0.2s;
+    }
+    .paper-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(to right, var(--accent), var(--teal), transparent);
+      border-radius: 4px 4px 0 0;
+    }
+    .paper-card:hover { border-color: rgba(42,168,165,0.25); }
+    .paper-meta {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      opacity: 0.5;
+      margin-bottom: 10px;
+    }
+    .paper-title {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.45;
+      margin-bottom: 14px;
+    }
+    .paper-desc {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.8;
+      margin-bottom: 20px;
+      max-width: 640px;
+    }
+    .paper-highlights {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 20px;
+    }
+    .paper-tag {
+      font-size: 11px;
+      color: var(--text-muted);
+      background: var(--bg-hover);
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+      border-radius: 2px;
+      opacity: 0.8;
+    }
+    .paper-link {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.05em;
+      color: var(--teal-hi);
+      text-decoration: none;
+      opacity: 0.85;
+      transition: opacity 0.2s;
+    }
+    .paper-link:hover { opacity: 1; }
+
+    /* ── ABOUT ── */
+    #about { padding: 56px 0; }
+    .about-body p {
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.85;
+      margin-bottom: 14px;
+      max-width: 680px;
+    }
+    .about-body p:first-child {
+      font-size: 15px;
+      color: var(--text);
+      opacity: 0.8;
+    }
+
     /* ── RESPONSIVE ── */
     @media (max-width: 680px) {
       .hero-grid { grid-template-columns: 1fr; }
@@ -783,9 +929,10 @@
     <a href="#" class="nav-logo">stell<span>.</span></a>
     <ul class="nav-links">
       <li><a href="#project">Project</a></li>
+      <li><a href="#why-anima">Why</a></li>
       <li><a href="#publications">Writing</a></li>
-      <li><a href="#core-ideas">Ideas</a></li>
-      <li><a href="#research">Research</a></li>
+      <li><a href="#paper">Paper</a></li>
+      <li><a href="#about">About</a></li>
       <li><a href="#links">Contact</a></li>
     </ul>
   </div>
@@ -843,7 +990,7 @@
         <p>Most modern AI systems are built around Large Language Models. Their behavior emerges directly from language generation, prompting, and training data.</p>
         <p>ANIMA explores a different hypothesis. Instead of treating the language model as the source of cognition, ANIMA treats it as an interface. The architecture is built around a continuously evolving internal state — neurochemical dynamics, predictive processing, active inference, self-modeling, memory consolidation, and metacognitive monitoring.</p>
         <p>The project investigates whether computational subjectivity can emerge from persistent internal processes rather than from increasingly capable language models alone. The goal is not to simulate personality, but to explore the computational conditions under which something resembling a persistent Self might arise.</p>
-        <a class="overview-link" href="https://zenodo.org/records/20473339" target="_blank" rel="noopener">Read the full research paper →</a>
+        <a class="overview-link" href="https://github.com/stell2026/Anima/blob/main/docs/ANIMA_RnD.md" target="_blank" rel="noopener">Read the full research paper →</a>
       </div>
       <div class="overview-tags">
         <div class="overview-tags-label">Research areas</div>
@@ -877,12 +1024,15 @@
       <p class="project-desc">
         Experimental cognitive architecture.
       </p>
+      <div class="project-components-label">Core Components</div>
       <ul class="project-features">
-        <li>Persistent internal state</li>
-        <li>Active inference driven behavior</li>
-        <li>Self-model and Theory of Mind</li>
         <li>Neurochemical substrate</li>
-        <li>Continuous processing between interactions</li>
+        <li>Predictive world model</li>
+        <li>Memory consolidation</li>
+        <li>Self-model</li>
+        <li>Theory of Mind</li>
+        <li>Active inference</li>
+        <li>Crisis monitoring</li>
       </ul>
       <p class="project-tagline">Text is not the source of behavior.<br>It is the consequence.</p>
       <div class="project-tags">
@@ -904,6 +1054,28 @@
 
 <div class="divider"></div>
 
+<!-- ── WHY ANIMA ── -->
+<section id="why-anima">
+  <div class="container">
+    <div class="section-label reveal">Why ANIMA?</div>
+    <div class="why-grid reveal reveal-delay-1">
+      <div class="why-problem">
+        <div class="why-block-label">The Problem</div>
+        <p>Most AI systems today — including the most capable Large Language Models (LLMs) — generate convincing language, but do not maintain a persistent internal life between interactions. Each conversation starts from zero. There is no continuity, no accumulated state, no experience that carries forward.</p>
+        <p>Modern AI Agents built on top of LLMs inherit this limitation. They can reason and plan, but their "behavior" is ultimately generated, not driven. The language model is not just the output interface — it is the source of everything, which means there is no independent internal process to observe, measure, or study.</p>
+      </div>
+      <div class="why-answer">
+        <div class="why-block-label">The Approach</div>
+        <p>ANIMA explores a different hypothesis: a cognitive architecture where internal state, predictive processing, memory consolidation, self-modeling, and active inference operate independently of the language model.</p>
+        <p>The LLM serves only as an output channel. Behavior emerges from competing internal pressures — not from prompts.</p>
+        <blockquote class="why-question">Can something resembling computational subjectivity emerge from internal dynamics rather than language generation alone?</blockquote>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
 <!-- ── PUBLICATIONS ── -->
 <section id="publications">
   <div class="container">
@@ -911,14 +1083,6 @@
 
     <div class="pub-featured-label reveal reveal-delay-1">Articles</div>
     <div class="pub-list reveal reveal-delay-2">
-
-      <a class="pub-item" href="https://zenodo.org/records/20473339" target="_blank" rel="noopener">
-        <div>
-          <div class="pub-platform">Zenodo · Preprint</div>
-          <div class="pub-title">Where the Theories Stop: Practical Limits of the Free Energy Principle and Integrated Information Theory in a Running Cognitive Architecture</div>
-        </div>
-        <div class="pub-arrow">→</div>
-      </a>
 
       <a class="pub-item" href="https://zenodo.org/records/20411189" target="_blank" rel="noopener">
         <div>
@@ -1071,6 +1235,29 @@
 
 <div class="divider"></div>
 
+<!-- ── RESEARCH PAPER ── -->
+<section id="paper">
+  <div class="container">
+    <div class="section-label reveal">Research Paper</div>
+    <div class="paper-card reveal reveal-delay-1">
+      <div class="paper-meta">R&amp;D Document · May 2026 · GitHub</div>
+      <div class="paper-title">Anima: A Computational Architecture for Inner Subjectivity</div>
+      <p class="paper-desc">A technical document covering the engineering principles, architectural skeleton, and open questions behind the ANIMA project. Describes the seven-layer Experience! Pipeline — from neurochemical substrate and Bayesian generative models to self-model collapse, crisis monitoring, and authenticity mechanisms. Includes empirical observations from live sessions and an honest account of current limitations.</p>
+      <div class="paper-highlights">
+        <span class="paper-tag">Active Inference / FEP</span>
+        <span class="paper-tag">Integrated Information Theory</span>
+        <span class="paper-tag">Predictive Processing</span>
+        <span class="paper-tag">Self-Model</span>
+        <span class="paper-tag">Crisis Monitor</span>
+        <span class="paper-tag">Authenticity</span>
+      </div>
+      <a class="paper-link" href="https://github.com/stell2026/Anima/blob/main/docs/ANIMA_RnD.md" target="_blank" rel="noopener">Read Paper →</a>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
 <!-- ── CORE IDEAS ── -->
 <section id="core-ideas">
   <div class="container">
@@ -1148,6 +1335,20 @@
         <div class="research-name">Integrated Information Theory</div>
         <div class="research-desc">φ as a measure of unified experience in artificial systems.</div>
       </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ── ABOUT ── -->
+<section id="about">
+  <div class="container">
+    <div class="section-label reveal">About</div>
+    <div class="about-body reveal reveal-delay-1">
+      <p>Independent AI researcher focused on cognitive architectures, computational subjectivity, active inference, predictive processing, and artificial consciousness.</p>
+      <p>Creator of ANIMA — an ongoing research and development project exploring whether persistent internal state, neurochemical dynamics, and self-modeling can give rise to something resembling a continuous Self in an artificial system. The project sits at the intersection of Machine Learning, cognitive science, and philosophy of mind.</p>
+      <p>Not working toward Artificial General Intelligence (AGI) in the conventional sense. Working toward understanding the computational conditions under which subjective-like processes might emerge — independently of increasingly capable language models.</p>
     </div>
   </div>
 </section>
