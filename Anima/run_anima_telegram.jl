@@ -27,6 +27,13 @@ load_dotenv!(joinpath(dirname(@__DIR__), ".env"))
 
 include("anima_memory_db.jl")
 include("anima_narrative.jl")
+
+# GUI bridge відсутній у Telegram-режимі — підставляємо no-op stubs
+# щоб виклики з anima_interface.jl / anima_background.jl не падали
+push_gui_event!(kind::String, payload::AbstractDict) = nothing
+write_gui_state!(a, r; kwargs...) = nothing
+push_gui_chat!(role::String, text::String; flash = nothing, meta = nothing) = nothing
+
 include("anima_interface.jl")
 include("anima_subjectivity.jl")
 include("anima_dream.jl")

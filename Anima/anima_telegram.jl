@@ -96,8 +96,11 @@ function _pid_alive(pid::Int)::Bool
     try
         @static if Sys.isunix()
             return ccall(:kill, Cint, (Cint, Cint), pid, 0) == 0
+        elseif Sys.iswindows()
+            out = read(`tasklist /FI "PID eq $pid" /NH`, String)
+            return occursin(Regex("\\b$(pid)\\b"), out)
         else
-            return isdir("/proc/$pid")
+            return false
         end
     catch
         false
