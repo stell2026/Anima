@@ -45,4 +45,10 @@ Allow: /
 User-agent: DuckDuckBot
 Allow: /
 
+User-agent: Bingbot
+Allow: /
+
+User-agent: MicrosoftPreview
+Allow: /
+
 Sitemap: https://anima.2026-stell.workers.dev/sitemap.xml

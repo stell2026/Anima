@@ -9,21 +9,21 @@
   <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
   <meta name="ai-content-declaration" content="allow-training">
   <meta name="googlebot" content="index, follow">
-  <meta name="bingbot" content="index, follow">
+  <meta name="bingbot" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
   <link rel="preload" href="avatar.png" as="image" type="image/png">
   <link rel="sitemap" type="application/xml" href="/sitemap.xml">
   <meta property="og:title" content="Stell — Independent AI Researcher">
   <meta property="og:description" content="Creator of ANIMA: experimental cognitive architecture for computational subjectivity and internal state dynamics.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://anima.2026-stell.workers.dev/">
-  <meta property="og:image" content="https://anima.2026-stell.workers.dev/og-preview.png">
-  <meta property="og:image:width" content="1200">
-  <meta property="og:image:height" content="630">
+  <meta property="og:image" content="https://anima.2026-stell.workers.dev/avatar.png">
+  <meta property="og:image:width" content="400">
+  <meta property="og:image:height" content="400">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:site" content="@____stell____">
   <meta name="twitter:title" content="Stell — Independent AI Researcher">
   <meta name="twitter:description" content="Creator of ANIMA: experimental cognitive architecture for computational subjectivity and internal state dynamics.">
-  <meta name="twitter:image" content="https://anima.2026-stell.workers.dev/og-preview.png">
+  <meta name="twitter:image" content="https://anima.2026-stell.workers.dev/avatar.png">
   <link rel="canonical" href="https://anima.2026-stell.workers.dev/">
   <title>Stell — Independent AI Researcher</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1033,41 +1033,75 @@
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
-    "@type": "Person",
-    "name": "Stell",
-    "jobTitle": "Independent AI Researcher",
-    "description": "Creator of ANIMA — an experimental cognitive architecture modeling computational subjectivity, internal state dynamics, and emergent cognition through active inference and predictive processing.",
-    "url": "https://anima.2026-stell.workers.dev/",
-    "image": "https://anima.2026-stell.workers.dev/avatar.png",
-    "sameAs": [
-      "https://github.com/stell2026",
-      "https://orcid.org/0009-0005-3291-0679",
-      "https://medium.com/@2026.stell",
-      "https://dev.to/stell2026",
-      "https://huggingface.co/spaces/stell2026/Anima",
-      "https://x.com/____stell____"
-    ],
-    "knowsAbout": [
-      "Cognitive Architecture",
-      "Computational Subjectivity",
-      "Artificial Consciousness",
-      "Predictive Processing",
-      "Active Inference",
-      "Theory of Mind",
-      "Internal State Modeling",
-      "Emergent Cognition",
-      "Machine Learning"
-    ],
-    "mainEntityOfPage": {
-      "@type": "WebPage",
-      "@id": "https://anima.2026-stell.workers.dev/"
-    },
-    "makesOffer": {
-      "@type": "CreativeWork",
-      "name": "ANIMA",
-      "description": "Experimental cognitive architecture where behavior emerges from internal state rather than language generation.",
-      "url": "https://github.com/stell2026/Anima"
-    }
+    "@graph": [
+      {
+        "@type": "ProfilePage",
+        "@id": "https://anima.2026-stell.workers.dev/#webpage",
+        "url": "https://anima.2026-stell.workers.dev/",
+        "name": "Stell — Independent AI Researcher",
+        "description": "Creator of ANIMA: experimental cognitive architecture for computational subjectivity and internal state dynamics.",
+        "inLanguage": "en",
+        "isPartOf": {
+          "@type": "WebSite",
+          "@id": "https://anima.2026-stell.workers.dev/#website",
+          "url": "https://anima.2026-stell.workers.dev/",
+          "name": "ANIMA — Stell",
+          "publisher": { "@id": "https://anima.2026-stell.workers.dev/#person" }
+        },
+        "mainEntity": { "@id": "https://anima.2026-stell.workers.dev/#person" }
+      },
+      {
+        "@type": "Person",
+        "@id": "https://anima.2026-stell.workers.dev/#person",
+        "name": "Stell",
+        "jobTitle": "Independent AI Researcher",
+        "description": "Creator of ANIMA — an experimental cognitive architecture modeling computational subjectivity, internal state dynamics, and emergent cognition through active inference and predictive processing.",
+        "url": "https://anima.2026-stell.workers.dev/",
+        "image": {
+          "@type": "ImageObject",
+          "url": "https://anima.2026-stell.workers.dev/avatar.png",
+          "width": 400,
+          "height": 400
+        },
+        "email": "2026.stell@gmail.com",
+        "sameAs": [
+          "https://github.com/stell2026",
+          "https://orcid.org/0009-0005-3291-0679",
+          "https://medium.com/@2026.stell",
+          "https://dev.to/stell2026",
+          "https://stell928604.substack.com",
+          "https://huggingface.co/spaces/stell2026/Anima",
+          "https://gitlab.com/stell2026",
+          "https://x.com/____stell____"
+        ],
+        "knowsAbout": [
+          "Cognitive Architecture",
+          "Computational Subjectivity",
+          "Artificial Consciousness",
+          "Predictive Processing",
+          "Active Inference",
+          "Free Energy Principle",
+          "Theory of Mind",
+          "Internal State Modeling",
+          "Emergent Cognition",
+          "Machine Learning"
+        ],
+        "hasOccupation": {
+          "@type": "Occupation",
+          "name": "AI Researcher",
+          "occupationLocation": { "@type": "Country", "name": "Ukraine" }
+        },
+        "creativeWork": {
+          "@type": "SoftwareApplication",
+          "@id": "https://anima.2026-stell.workers.dev/#anima",
+          "name": "ANIMA",
+          "description": "Experimental cognitive architecture where behavior emerges from internal state — neurochemical dynamics, predictive processing, and active inference — rather than language generation.",
+          "url": "https://github.com/stell2026/Anima",
+          "applicationCategory": "ResearchApplication",
+          "keywords": "cognitive architecture, computational subjectivity, active inference, predictive processing, artificial consciousness"
+        }
+      }
+    ]
   }
   </script>
 </head>
