@@ -1880,38 +1880,75 @@ mutable struct CuriosityRegistry
 end
 CuriosityRegistry() = CuriosityRegistry(CuriosityObject[], 12)
 
-function _curiosity_label(emotion::String, pe::Float64)::String
-    pe > 0.75 && return "невідоме у стані $(lowercase(emotion))"
-    pe > 0.55 && return "незрозуміле через $(lowercase(emotion))"
-    return "$(lowercase(emotion)) що не вкладається"
+function _curiosity_label(topic_id::String, emotion::String, pe::Float64)::String
+    # topic_id описує когнітивну напругу, emotion — забарвлення
+    base = if occursin("_vs_", topic_id)
+        parts = split(topic_id, "_vs_")
+        "напруга між $(parts[1]) і $(parts[2])"
+    elseif startswith(topic_id, "latent_")
+        "прихований опір: $(replace(topic_id, "latent_" => ""))"
+    elseif topic_id == "social"
+        "потреба в контакті"
+    elseif topic_id == "goal_conflict"
+        "внутрішній конфлікт"
+    elseif topic_id == "curiosity"
+        "когнітивна невизначеність"
+    else
+        topic_id
+    end
+    pe > 0.55 ? "$base (через $(lowercase(emotion)))" : base
 end
 
-# Викликається з slow_tick при кожному флеші де є pred_error
+# Канонічний topic_id з наявних когнітивних сигналів.
+# Ієрархія: unresolved conflict > latent resistance > dominant mode.
+# sort() гарантує що "a_vs_b" і "b_vs_a" — один і той самий ключ.
+function derive_topic_id(
+    need_a::String, need_b::String,  # goal_conflict поля
+    gc_active::Bool,
+    latent_tag::String,              # dominant latent тег або ""
+    mal_dominant::Symbol,
+)::String
+    if gc_active && !isempty(need_a) && !isempty(need_b)
+        parts = sort([
+            replace(need_a, " " => "_"),
+            replace(need_b, " " => "_"),
+        ])
+        return "$(parts[1])_vs_$(parts[2])"
+    elseif !isempty(latent_tag)
+        return "latent_$(latent_tag)"
+    else
+        return String(mal_dominant)
+    end
+end
+
+# Викликається з experience! при кожному флеші де є pred_error.
+# topic_id — стабільна когнітивна тема (не емоція).
+# emotion_ctx — поточна емоція, тільки для label і valence.
 function update_curiosity!(
     cr::CuriosityRegistry,
+    topic_id::String,
     emotion_ctx::String,
     pe::Float64,
     valence::Float64,
     flash::Int,
 )
-    pe < 0.12 && return  # недостатня невирішеність
+    pe < 0.08 && return  # недостатня невирішеність
 
-    # шукаємо існуючий об'єкт для цього emotion_ctx
-    idx = findfirst(o -> o.id == emotion_ctx && !o.resolved, cr.objects)
+    idx = findfirst(o -> o.id == topic_id && !o.resolved, cr.objects)
     if idx !== nothing
         obj = cr.objects[idx]
         obj.pe_mean = obj.pe_mean * 0.85 + pe * 0.15
-        obj.intensity = clamp01(obj.intensity + pe * 0.06)
+        obj.intensity = clamp01(obj.intensity + pe * 0.10)
         obj.valence = obj.valence * 0.9 + valence * 0.1
         obj.activation_count += 1
         obj.last_active_flash = flash
     else
         length(cr.objects) >= cr.max_objects && _prune_curiosity!(cr)
         push!(cr.objects, CuriosityObject(
-            emotion_ctx,
-            _curiosity_label(emotion_ctx, pe),
+            topic_id,
+            _curiosity_label(topic_id, emotion_ctx, pe),
             pe,
-            clamp01(pe * 0.4),
+            clamp01(pe * 0.8),
             valence,
             1,
             flash,
@@ -1940,31 +1977,31 @@ end
 # Потребує activation_count >= 2: один флеш — ще не цікавість, а шум
 function resolve_curiosity!(
     cr::CuriosityRegistry,
+    topic_id::String,
     emotion_ctx::String,
     pe::Float64,
     flash::Int = 0,
     context::String = "",
 )
     pe > 0.25 && return
-    idx = findfirst(o -> o.id == emotion_ctx && !o.resolved, cr.objects)
+    idx = findfirst(o -> o.id == topic_id && !o.resolved, cr.objects)
     idx === nothing && return
     obj = cr.objects[idx]
     obj.activation_count < 2 && return
+    # молодий об'єкт ще не накопичив достатньо — не даємо resolve decay його вбити
+    obj.intensity < 0.25 && pe >= 0.08 && return
 
     if pe < 0.10
         obj.resolved = true
     else
-        # будуємо новий label: якщо є живий контекст — закріплюємо момент уточнення
         new_label = if length(context) > 5
-            # collect → chars щоб не рвати кириличні символи
             chars = collect(strip(context))
             fragment = String(chars[1:min(45, length(chars))])
-            # обрізаємо по останньому пробілу щоб не рвати слово
             last_sp = findlast(' ', fragment)
             fragment = last_sp !== nothing && last_sp > 10 ? fragment[1:prevind(fragment, last_sp)] : fragment
             "$(lowercase(emotion_ctx)): «$(fragment)»"
         else
-            _curiosity_label(emotion_ctx, pe)
+            _curiosity_label(topic_id, emotion_ctx, pe)
         end
 
         if new_label != obj.label
@@ -1983,9 +2020,16 @@ function _prune_curiosity!(cr::CuriosityRegistry)
         sort!(cr.objects, by = o -> o.intensity) |> x -> deleteat!(x, 1)
 end
 
-# топ активний об'єкт для промпту і ініціативи
+# топ активний об'єкт для промпту і identity_block (вищий поріг — тільки зрілі)
 function top_curiosity(cr::CuriosityRegistry)::Union{CuriosityObject,Nothing}
     active = filter(o -> !o.resolved && o.intensity > 0.15, cr.objects)
+    isempty(active) && return nothing
+    active[argmax(map(o -> o.intensity, active))]
+end
+
+# топ активний об'єкт для progress/churn сигналів (нижчий поріг — включає молоді)
+function top_curiosity_any(cr::CuriosityRegistry)::Union{CuriosityObject,Nothing}
+    active = filter(o -> !o.resolved && o.intensity > 0.05, cr.objects)
     isempty(active) && return nothing
     active[argmax(map(o -> o.intensity, active))]
 end
@@ -2018,6 +2062,88 @@ end
 # рвемо ланцюжок consecutive_progress, intensity не торкаємось.
 function apply_churn!(obj::CuriosityObject)
     obj.consecutive_progress = 0
+end
+
+# --- Life Threads ---------------------------------------------------------
+# Довгостроковий шар поверх CuriosityObject.
+# Thread виникає коли CuriosityObject достатньо зрів і живе тижнями —
+# незалежно від того чи об'єкт зараз активний.
+# pressure зростає плавно з idle-часом і впливає на initiative.
+
+mutable struct CuriosityThread
+    id::String          # збігається з CuriosityObject.id
+    label::String
+    origin_flash::Int
+    status::Symbol      # :active | :dormant | :resolved
+    last_surface_flash::Int   # коли CuriosityObject востаннє був реально активним
+    pressure::Float64   # 0.0–1.0; зростає з idle, впливає на initiative
+end
+
+# Піднімає або оновлює thread коли відповідний CuriosityObject реально активний.
+# Викликається з slow_tick після update_curiosity!, не з рендерингу.
+function surface_thread!(threads::Vector{CuriosityThread}, co::CuriosityObject, flash::Int)
+    idx = findfirst(t -> t.id == co.id, threads)
+    if idx !== nothing
+        t = threads[idx]
+        t.label = co.label  # label міг уточнитись через refinement
+        t.last_surface_flash = flash
+        t.status = :active
+        # якщо thread повернувся з dormant — pressure не скидаємо,
+        # але трохи знижуємо щоб відобразити "знову з'явилось"
+        t.pressure = clamp(t.pressure - 0.1, 0.0, 1.0)
+    else
+        push!(threads, CuriosityThread(co.id, co.label, flash, :active, flash, 0.0))
+    end
+end
+
+# Decay і перехід в :dormant для threads що давно не поверхнялись.
+# pressure зростає плавно — без порогового стрибка.
+function tick_threads!(threads::Vector{CuriosityThread}, flash::Int)
+    for t in threads
+        t.status == :resolved && continue
+        idle = flash - t.last_surface_flash
+        # плавне зростання: ~0.003 за флеш при idle=30, ~0.006 при idle=60
+        pressure_delta = clamp(idle / 10_000.0, 0.0, 0.008)
+        t.pressure = clamp(t.pressure + pressure_delta, 0.0, 1.0)
+        if idle > 150
+            t.status = :dormant
+        end
+    end
+end
+
+# Thread стає :resolved якщо відповідний CuriosityObject resolved або зник.
+function sync_threads_resolved!(threads::Vector{CuriosityThread}, cr::CuriosityRegistry)
+    active_ids = Set(o.id for o in cr.objects if !o.resolved)
+    for t in threads
+        t.status != :resolved && t.id ∉ active_ids && (t.status = :resolved)
+    end
+end
+
+function threads_to_json(threads::Vector{CuriosityThread})
+    map(threads) do t
+        Dict(
+            "id"                 => t.id,
+            "label"              => t.label,
+            "origin_flash"       => t.origin_flash,
+            "status"             => string(t.status),
+            "last_surface_flash" => t.last_surface_flash,
+            "pressure"           => t.pressure,
+        )
+    end
+end
+
+function threads_from_json!(threads::Vector{CuriosityThread}, arr)
+    empty!(threads)
+    for d in arr
+        push!(threads, CuriosityThread(
+            String(get(d, "id", "")),
+            String(get(d, "label", "")),
+            Int(get(d, "origin_flash", 0)),
+            Symbol(get(d, "status", "dormant")),
+            Int(get(d, "last_surface_flash", 0)),
+            Float64(get(d, "pressure", 0.0)),
+        ))
+    end
 end
 
 function cr_to_json(cr::CuriosityRegistry)
@@ -2665,6 +2791,7 @@ function psyche_save!(
     cmt::CommitmentRegistry = CommitmentRegistry(),
     aes::AestheticSense = AestheticSense(),
     af::AttentionFocus = AttentionFocus(),
+    life_threads::Vector{CuriosityThread} = CuriosityThread[],
 )
     dir = dirname(filepath)
     isempty(dir) || isdir(dir) || mkpath(dir)
@@ -2688,6 +2815,7 @@ function psyche_save!(
         "commitment_registry"=>cmt_to_json(cmt),
         "aesthetic_sense"=>as_to_json(aes),
         "attention_focus"=>af_to_json(af),
+        "life_threads"=>threads_to_json(life_threads),
     )
     open(filepath, "w") do f
         ;
@@ -2726,6 +2854,7 @@ function psyche_load!(
     cmt::CommitmentRegistry = CommitmentRegistry(),
     aes::AestheticSense = AestheticSense(),
     af::AttentionFocus = AttentionFocus(),
+    life_threads::Vector{CuriosityThread} = CuriosityThread[],
 )
     if !isfile(filepath)
         println("  [PSYCHE] Новий psyche стан.")
@@ -2758,6 +2887,7 @@ function psyche_load!(
         haskey(d, "commitment_registry") && cmt_from_json!(cmt, d["commitment_registry"])
         haskey(d, "aesthetic_sense") && as_from_json!(aes, d["aesthetic_sense"])
         haskey(d, "attention_focus") && af_from_json!(af, d["attention_focus"])
+        haskey(d, "life_threads") && threads_from_json!(life_threads, d["life_threads"])
         println("  [PSYCHE] Завантажено.")
     catch e
         ;
