@@ -681,7 +681,8 @@ function freshState(){
     vitals:{D:null,S:null,N:null,phi:null,phiPrev:null,label:null,mood:null,flashId:null,
             vfe:null,vfeMode:null,bpm:null,hrv:null,attn:null,G:null,Gdelta:null,H:null,vfeDrift:null},
     self:{spe:null,agency:null,stab:null,etrust:null,sd:null,sc:null,crisis:null,coh:null,
-          disclosure:null,disclosureThr:null,shadowP:null,intent:null,flashId:null},
+          disclosure:null,disclosureThr:null,shadowP:null,intent:null,flashId:null,
+          contactNeed:null,identityDrift:null,chronicLowSerotonin:null},
     mal:{regimeFrom:null,regimeTo:null,dominant:null,score:null,det:null,runnerUp:null,
          runnerUpScore:null,scores:null,events:[]},
     causal:{auditScore:null,auditCo:null,endorsed:null,cfCo:null,cfAgencyCo:null,cfFlash:null,
@@ -702,6 +703,23 @@ var PATTERNS = [
   { re:/^\[MAL_OVERRIDE\]\s+(\S+)\s+override:\s*NT=(\S+)\s*→\s*MAL=(\S+)\s*\|\s*winner_before=(\S+)\s+winner_after=(\S+)/,
     handle:function(m, st){
       st.mal.events.push('⚡ override(' + m[1] + ') NT=' + m[2] + ' → MAL=' + m[3] + ' · winner ' + m[4] + '→' + m[5]);
+    }},
+  { re:/^\[MAL_OVERRIDE\]\s+soft\s+bias:\s*(\S+)\s+\+=\s*([\d.]+)/,
+    handle:function(m, st){
+      st.mal.events.push('⚡ soft bias: ' + m[1] + ' +=' + m[2]);
+    }},
+  { re:/^\[CURIOSITY_PROGRESS\]\s+(.+)/,
+    handle:function(m, st){
+      st.causal.events.push('📈 progress: ' + m[1]);
+    }},
+  { re:/^\[CURIOSITY_CHURN\]\s+(.+)/,
+    handle:function(m, st){
+      st.causal.events.push('🔀 churn: ' + m[1]);
+    }},
+  { re:/^\[CONTACT_SAT\]\s+contact_need=([\d.]+)/,
+    handle:function(m, st){
+      st.causal.events.push('🤝 contact_sat: need=' + m[1]);
+      st.self.contactNeed = parseFloat(m[1]);
     }},
   { re:/^\[IGNITION:(\w+)\]\s+recalled=(\S+)\s+sim=([\d.]+)\s+w=([\d.]+)\s+gap=([\d.]+)\s+source=(\S+)/,
     handle:function(m, st){
@@ -888,6 +906,9 @@ function renderSelf(s){
     sparklineSvg(metricHistory.coh, '#9B7EDE')));
   rows.push(metricRow('disclosure', s.disclosure ? ('[' + s.disclosure + '] thr=' + fmt(s.disclosureThr)) : '—'));
   rows.push(metricRow('shadow p', fmt(s.shadowP)));
+  rows.push(metricRow('contact need', fmt(s.contactNeed)));
+  rows.push(metricRow('identity drift', fmt(s.identityDrift)));
+  rows.push(metricRow('chronic S↓', s.chronicLowSerotonin != null ? String(s.chronicLowSerotonin) : '—'));
   document.getElementById('selfMetrics').innerHTML = rows.join('');
   document.getElementById('selfLabel').textContent = s.flashId ? ('#' + s.flashId) : '—';
   document.getElementById('intentRow').innerHTML = '<span>intent:</span> ' + (s.intent || '—');
@@ -1055,6 +1076,9 @@ function applyLiveState(raw){
   s.sd = raw.self.sd; s.sc = raw.self.sc; s.crisis = raw.self.crisis; s.coh = raw.self.coh;
   s.disclosure = raw.self.disclosure; s.disclosureThr = raw.self.disclosure_thr;
   s.shadowP = raw.self.shadow_p; s.intent = raw.self.intent; s.flashId = raw.flash_id;
+  s.contactNeed = raw.self.contact_need != null ? raw.self.contact_need : null;
+  s.identityDrift = raw.self.identity_drift != null ? raw.self.identity_drift : null;
+  s.chronicLowSerotonin = raw.self.chronic_low_serotonin != null ? raw.self.chronic_low_serotonin : null;
 
   mal.dominant = raw.causal.mal_dominant; mal.regimeTo = raw.causal.mal_regime;
   mal.score = raw.causal.mal_score; mal.det = raw.causal.mal_determinant;
@@ -1098,6 +1122,16 @@ function routeLiveEvent(ev){
     renderEvents('causalEvents', liveState.causal.events);
   } else if(ev.kind === 'audit'){
     liveState.causal.events.push('✅ audit score=' + fmt(ev.score) + ' co=' + fmt(ev.co) + ' endorsed=' + ev.endorsed);
+    renderEvents('causalEvents', liveState.causal.events);
+  } else if(ev.kind === 'curiosity_progress'){
+    liveState.causal.events.push('📈 progress: ' + (ev.label || '') + ' cons=' + (ev.consecutive || ''));
+    renderEvents('causalEvents', liveState.causal.events);
+  } else if(ev.kind === 'curiosity_churn'){
+    liveState.causal.events.push('🔀 churn: ' + (ev.label || '') + ' → ' + (ev.new_label || ''));
+    renderEvents('causalEvents', liveState.causal.events);
+  } else if(ev.kind === 'contact_sat'){
+    liveState.self.contactNeed = ev.contact_need != null ? ev.contact_need : liveState.self.contactNeed;
+    liveState.causal.events.push('🤝 contact_sat: need=' + fmt(ev.contact_need));
     renderEvents('causalEvents', liveState.causal.events);
   }
 }
