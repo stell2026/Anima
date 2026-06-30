@@ -191,6 +191,12 @@ function _maybe_self_initiate!(
         effective_cooldown *= 0.80
     end
 
+    # Life Thread з високим тиском → коротший cooldown: тема давно не закривається
+    _high_pressure_thread = findfirst(t -> t.status == :active && t.pressure > 0.6, a.life_threads)
+    if !isnothing(_high_pressure_thread)
+        effective_cooldown *= 0.75
+    end
+
     now_t - a._last_self_msg_time < effective_cooldown && return
     now_t - a._last_user_time < SELF_INITIATE_GAP_SECS && return
 
@@ -431,6 +437,19 @@ function psyche_slow_tick!(a::Anima)
     end
 
     tick_curiosity!(a.curiosity_registry, a.flash_count)
+    # Life Threads: surface активні CuriosityObjects, decay idle threads
+    top_co_for_thread = top_curiosity_any(a.curiosity_registry)
+    if !isnothing(top_co_for_thread) &&
+            top_co_for_thread.intensity > 0.5 &&
+            top_co_for_thread.activation_count >= 3
+        _was_new = !any(t -> t.id == top_co_for_thread.id, a.life_threads)
+        surface_thread!(a.life_threads, top_co_for_thread, a.flash_count)
+        if _was_new
+            @info "[THREAD] новий: \"$(top_co_for_thread.label)\" intensity=$(round(top_co_for_thread.intensity,digits=2)) activation=$(top_co_for_thread.activation_count)"
+        end
+    end
+    tick_threads!(a.life_threads, a.flash_count)
+    sync_threads_resolved!(a.life_threads, a.curiosity_registry)
     tick_aesthetic!(a.aesthetic_sense, a.flash_count)
     a.goal_conflict.tension = max(0.0, a.goal_conflict.tension - 0.008)
     if a.goal_conflict.tension < 0.05
@@ -1621,7 +1640,7 @@ function repl_with_background!(
                     _progress_signal = false
                     _progress_target = ""
                     _churn = false
-                    _top_co_now = top_curiosity(a.curiosity_registry)
+                    _top_co_now = top_curiosity_any(a.curiosity_registry)
                     if is_progress_eligible(_top_co_now)
                         _endorsed_ok = a.last_endorsement == :endorsed
                         _causal_necessary = !isnothing(_audit) && _audit.causal_necessary
@@ -1630,10 +1649,19 @@ function repl_with_background!(
                             _progress_signal = true
                             apply_progress!(_top_co_now)
                             @info "[CURIOSITY_PROGRESS] \"$(_progress_target)\" intensity→$(round(_top_co_now.intensity,digits=3)) consecutive=$(_top_co_now.consecutive_progress)"
+                            push_gui_event!("curiosity_progress", Dict(
+                                "label"       => _progress_target,
+                                "intensity"   => Float64(_top_co_now.intensity),
+                                "consecutive" => Int(_top_co_now.consecutive_progress),
+                            ))
                         elseif !isempty(_progress_target_prev) && _top_co_now.label != _progress_target_prev
                             _churn = true
                             apply_churn!(_top_co_now)
                             @info "[CURIOSITY_CHURN] \"$(_progress_target_prev)\" → \"$(_progress_target)\""
+                            push_gui_event!("curiosity_churn", Dict(
+                                "label"     => _progress_target_prev,
+                                "new_label" => _progress_target,
+                            ))
                         end
                         _progress_target_prev = _top_co_now.label
                     else
@@ -1646,6 +1674,9 @@ function repl_with_background!(
                         _before = a.sig_layer.contact_need
                         a.sig_layer.contact_need = clamp01(a.sig_layer.contact_need - 0.08)
                         @info "[CONTACT_SAT] contact_need $(round(_before,digits=2)) → $(round(a.sig_layer.contact_need,digits=2))"
+                        push_gui_event!("contact_sat", Dict(
+                            "contact_need" => Float64(a.sig_layer.contact_need),
+                        ))
                     end
 
                     # Active Theory of Mind: evaluate → resolve → generate.
