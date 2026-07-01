@@ -24,9 +24,13 @@ let _input_llm_path = joinpath(@__DIR__, "anima_input_llm.jl")
         include(_input_llm_path)
     else
         @warn "anima_input_llm.jl не знайдено — використовується text_to_stimulus fallback"
-        process_input(text::String, fallback_fn; kwargs...) =
+        # ВИПРАВЛЕНО: без `global` ці визначення були б локальними для цього
+        # `let`-блоку (hard local scope) і не були б видимі з anima_background.jl /
+        # anima_telegram.jl, де ці функції реально викликаються — код впав би з
+        # UndefVarError, щойно спрацював би цей fallback-шлях.
+        global process_input(text::String, fallback_fn; kwargs...) =
             (fallback_fn(text), "fallback", "")
-        input_source_label(src::String) = src == "fallback" ? "[rule]" : "[llm]"
+        global input_source_label(src::String) = src == "fallback" ? "[rule]" : "[llm]"
     end
 end
 
@@ -184,6 +188,7 @@ mutable struct Anima
     shadow_registry::ShadowRegistry
     curiosity_registry::CuriosityRegistry
     commitment_registry::CommitmentRegistry
+    life_threads::Vector{CuriosityThread}  # довгострокові незакриті теми
     # Self
     sbg::SelfBeliefGraph
     spm::SelfPredictiveModel
@@ -262,6 +267,7 @@ function Anima(;
         ShadowRegistry(),
         CuriosityRegistry(),
         CommitmentRegistry(),
+        CuriosityThread[],      # life_threads
         SelfBeliefGraph(),
         SelfPredictiveModel(),
         AgencyLoop(),
@@ -320,6 +326,7 @@ function Anima(;
         a.commitment_registry,
         a.aesthetic_sense,
         a.attention_focus,
+        a.life_threads,
     )
     _self_path = anima_state_file(psyche_mem_path, "self")
     if isfile(_self_path)
@@ -427,6 +434,7 @@ function save!(a::Anima; summary = "", verbose = false)
         a.commitment_registry,
         a.aesthetic_sense,
         a.attention_focus,
+        a.life_threads,
     )
     self_path = anima_state_file(a.psyche_mem_path, "self")
     self_data = Dict(
@@ -833,10 +841,6 @@ function experience!(
         phi,
     )
 
-    # CuriosityRegistry: pe = помилка самопередбачення (невизначеність власного стану)
-    update_curiosity!(a.curiosity_registry, primary, Float64(a.spm.self_pred_error), Float64(vad[1]), a.flash_count)
-    resolve_curiosity!(a.curiosity_registry, primary, Float64(a.spm.self_pred_error), a.flash_count, user_message)
-
     # CommitmentRegistry: якщо є активний intent — оновлюємо зобов'язання
     if !isnothing(intent)
         tick_commitment!(a.commitment_registry, a.flash_count)
@@ -934,6 +938,20 @@ function experience!(
     # MAL: Meta-Arbitration — який цикл має сигнальну перевагу цього флешу.
     # Чиста функція, transient — результат тільки логується в CausalTrace.
     _arb = compute_arbitration(a)
+
+    # CuriosityRegistry: topic_id — стабільна когнітивна тема, не емоція.
+    # Обчислюємо після _arb щоб мати реальний dominant_loop як fallback.
+    let _gc_active = a.goal_conflict.tension > 0.35
+        _topic_id = derive_topic_id(
+            a.goal_conflict.need_a,
+            a.goal_conflict.need_b,
+            _gc_active,
+            "",
+            _arb.dominant_loop,
+        )
+        update_curiosity!(a.curiosity_registry, _topic_id, primary, Float64(a.spm.self_pred_error), Float64(vad[1]), a.flash_count)
+        resolve_curiosity!(a.curiosity_registry, _topic_id, primary, Float64(a.spm.self_pred_error), a.flash_count, user_message)
+    end
 
     # LatentBuffer + StructuralScars
     lb_snap = update_latent!(
@@ -1983,6 +2001,14 @@ function build_identity_block(a::Anima, mem_db = nothing)::String
             co_line *= " [уточнено з: \"$(top_co.refinement_history[1].old_label)\"]"
         end
         push!(lines, co_line)
+    end
+
+    # life threads — незакриті теми що живуть тижнями і тиснуть зсередини
+    active_threads = filter(t -> t.status == :active && t.pressure > 0.4, a.life_threads)
+    if !isempty(active_threads)
+        sort!(active_threads, by = t -> -t.pressure)
+        thread_labels = join(map(t -> "\"$(t.label)\"", active_threads[1:min(3,end)]), ", ")
+        push!(lines, "у процесі думання (тижнями): $(thread_labels)")
     end
 
     # aesthetic — що залишило найживіший слід
