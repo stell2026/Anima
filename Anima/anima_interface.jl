@@ -949,7 +949,8 @@ function experience!(
             "",
             _arb.dominant_loop,
         )
-        update_curiosity!(a.curiosity_registry, _topic_id, primary, Float64(a.spm.self_pred_error), Float64(vad[1]), a.flash_count)
+        _origin = derive_origin(_gc_active, pred.spike, _arb.dominant_loop)
+        update_curiosity!(a.curiosity_registry, _topic_id, primary, Float64(a.spm.self_pred_error), Float64(vad[1]), a.flash_count, _origin)
         resolve_curiosity!(a.curiosity_registry, _topic_id, primary, Float64(a.spm.self_pred_error), a.flash_count, user_message)
     end
 
