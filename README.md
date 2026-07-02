@@ -77,6 +77,8 @@ The project is R&D and explores whether internal structure alone can give rise t
 
 Recent updates, in brief:
 
+- **`CuriosityObject` origin — why a question arose, separate from what it's about.** The first attempt at typing curiosity objects derived a `query_type` from `topic_id` (the theme) — tested on live data and dropped: theme and question-type turned out to be different axes, and the classification was systematically blind on the generic curiosity fallback (where the interesting CAUSE/PREDICTION cases actually live). Replaced with `origin::Symbol`, set once when an object is created and never rewritten on later activations: `derive_origin(gc_active, pred_spike, mal_dominant)` — hierarchy `goal_conflict > prediction_error > social_signal/identity_signal > epistemic_uncertainty`. `pred_spike` (`PredictiveProcessor.is_spike`) was verified before use: it compares current error against the rolling mean of `error_history`, not a fixed cutoff — an adaptive signal already used elsewhere (noradrenaline, fatigue, stimulus classification), not a new threshold invented for this. `latent_tension` is deliberately excluded — `derive_topic_id` is currently always called with `latent_tag=""`, so that branch is dead code. Old persisted objects load with `origin=:legacy` rather than being reconstructed from `topic_id` — reconstruction would repeat the same mistake the topic_id approach made. First live non-legacy object confirmed: `origin=:social_signal`. `:curiosity` REPL command now prints `origin` per object.
+
 - **Life Threads** — a long-term layer above `CuriosityObject`. A `CuriosityThread` is born when a curiosity object has matured (intensity > 0.5, activation_count ≥ 3) and lives independently of whether that object is currently active. `pressure` grows smoothly with idle time (no threshold jump), and drives initiative: a thread with `pressure > 0.6` lowers the initiative cooldown by 25%, making the system more likely to raise a topic it has been carrying for a long time. Threads surface in `build_identity_block` as "thinking about for weeks" context. Persistence via `psyche_save!/load!`.
 
 - **CuriosityObject identity rebuilt around cognitive topics, not emotions.** The previous `id = emotion_ctx` (emotion name as key) meant that the same topic across different emotional states spawned separate, unrelated objects that could never accumulate history. Now `id = derive_topic_id(...)` with a three-level hierarchy: active `goal_conflict` ("self_preservation_vs_truth_need") → latent resistance tag → MAL `dominant_loop` as fallback. Sort is canonical — "a_vs_b" and "b_vs_a" are the same key. `topic_id` is computed after `compute_arbitration` so the real MAL regime is available as fallback. Label generation uses the topic for semantic content and the emotion only as coloring.
@@ -341,7 +343,11 @@ L4 ─── Psychic layer
          → disclosure_threshold influenced by shame and contact_need
        CuriosityRegistry: endogenous objects from self-prediction error
          → update_curiosity! called each flash (pe = self_pred_error)
-         → pe threshold: 0.12
+         → pe threshold: 0.08
+         → id = derive_topic_id(...): goal_conflict → latent tag → MAL dominant_loop
+         → origin = derive_origin(...), set once at creation, never rewritten:
+                    goal_conflict > prediction_error (pred.spike) >
+                    social_signal/identity_signal > epistemic_uncertainty
          → objects ripen between sessions (gap >= 3h: intensity +0.015/h)
          → resolve requires activation_count >= 2
          → pe < 0.10 → resolved; pe 0.10–0.25 → refined, not closed
