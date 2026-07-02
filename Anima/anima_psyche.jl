@@ -1872,6 +1872,7 @@ mutable struct CuriosityObject
     resolved::Bool
     refinement_history::Vector{CuriosityRefinement}
     consecutive_progress::Int  # послідовні progress_signal без churn-розриву
+    origin::Symbol           # чому виникла: механізм породження, фіксується один раз при створенні
 end
 
 mutable struct CuriosityRegistry
@@ -1921,9 +1922,51 @@ function derive_topic_id(
     end
 end
 
+# topic_id відповідає на "про що я думаю"; origin — на "чому це виникло",
+# механізм породження, а не тема. Фіксується один раз при створенні CuriosityObject
+# і більше не переглядається на наступних активаціях того ж об'єкта.
+# latent_tension свідомо відсутній: derive_topic_id зараз викликається з
+# latent_tag="" завжди (anima_interface.jl) — шлях мертвий, origin на ньому
+# не будується поки latent tag реально не підключений до виклику.
+# gc_active — структурний конфлікт потреб, головніший за одноразовий сюрприз.
+# pred_spike — реальний VAD-рівень сюрприз (PredictiveProcessor.is_spike,
+# adaptive: error відносно ковзного середнього, не фіксований поріг).
+function derive_origin(gc_active::Bool, pred_spike::Bool, mal_dominant::Symbol)::Symbol
+    if gc_active
+        :goal_conflict
+    elseif pred_spike
+        :prediction_error
+    elseif mal_dominant == :social
+        :social_signal
+    elseif mal_dominant == :identity
+        :identity_signal
+    else
+        :epistemic_uncertainty
+    end
+end
+
+function derive_query_type(origin::Symbol)::Symbol
+    if origin == :goal_conflict
+        :VALUE
+    elseif origin == :prediction_error
+        :CAUSE
+    elseif origin == :social_signal
+        :SOCIAL
+    elseif origin == :identity_signal
+        :IDENTITY
+    elseif origin == :epistemic_uncertainty
+        :BELIEF
+    else
+        # :legacy — об'єкти завантажені з persistence до появи origin
+        :BELIEF
+    end
+end
+
 # Викликається з experience! при кожному флеші де є pred_error.
 # topic_id — стабільна когнітивна тема (не емоція).
 # emotion_ctx — поточна емоція, тільки для label і valence.
+# origin — механізм породження, фіксується тільки при створенні нового об'єкта;
+# наступні активації того ж об'єкта origin не змінюють.
 function update_curiosity!(
     cr::CuriosityRegistry,
     topic_id::String,
@@ -1931,6 +1974,7 @@ function update_curiosity!(
     pe::Float64,
     valence::Float64,
     flash::Int,
+    origin::Symbol,
 )
     pe < 0.08 && return  # недостатня невирішеність
 
@@ -1955,6 +1999,7 @@ function update_curiosity!(
             false,
             CuriosityRefinement[],
             0,
+            origin,
         ))
     end
 end
@@ -2158,6 +2203,7 @@ function cr_to_json(cr::CuriosityRegistry)
             "last_active_flash" => o.last_active_flash,
             "resolved" => o.resolved,
             "consecutive_progress" => o.consecutive_progress,
+            "origin" => string(o.origin),
             "refinement_history" => [
                 Dict(
                     "flash" => r.flash,
@@ -2191,6 +2237,7 @@ function cr_from_json!(cr::CuriosityRegistry, d::AbstractDict)
             Bool(od["resolved"]),
             refs,
             Int(get(od, "consecutive_progress", 0)),
+            Symbol(get(od, "origin", "legacy")),
         ))
     end
 end
