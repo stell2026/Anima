@@ -1358,7 +1358,7 @@ function execute_gui_cmd(cmd::String)::String
             else
                 println(io, "\n  [CURIOSITY] Активних: $(length(objs))")
                 for co in objs
-                    println(io, "  · $(co.label) | intensity=$(round(co.intensity,digits=2)) val=$(round(co.valence,digits=2)) activations=$(co.activation_count)")
+                    println(io, "  · $(co.label) | intensity=$(round(co.intensity,digits=2)) val=$(round(co.valence,digits=2)) activations=$(co.activation_count) origin=$(co.origin)")
                 end
             end
         elseif cmd == ":dreams"
