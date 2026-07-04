@@ -1864,7 +1864,7 @@ end
 mutable struct CuriosityObject
     id::String
     label::String
-    pe_mean::Float64        # середній pred_error при активації
+    signal_mean::Float64    # середня сила сигналу-тригера (pred_error АБО рівень потреби — залежно від origin)
     intensity::Float64      # зростає без розв'язання, decay при закритті
     valence::Float64        # >0 цікаво, <0 тривожно-цікаво
     activation_count::Int
@@ -1894,6 +1894,16 @@ function _curiosity_label(topic_id::String, emotion::String, pe::Float64)::Strin
         "внутрішній конфлікт"
     elseif topic_id == "curiosity"
         "когнітивна невизначеність"
+    elseif topic_id == "contact_need"
+        "дефіцит контакту (фоновий)"
+    elseif topic_id == "truth_need"
+        "потреба в правді"
+    elseif topic_id == "autonomy_need"
+        "потреба в автономії"
+    elseif topic_id == "coherence_need"
+        "потреба у внутрішньому порядку"
+    elseif topic_id == "novelty_need"
+        "потреба в новизні"
     else
         topic_id
     end
@@ -1962,27 +1972,81 @@ function derive_query_type(origin::Symbol)::Symbol
     end
 end
 
-# Викликається з experience! при кожному флеші де є pred_error.
-# topic_id — стабільна когнітивна тема (не емоція).
+# Потреби, здатні самостійно (без пари, без pred_error) породити цікавість.
+# Поріг вищий за парний CONFLICT_PAIRS (0.38): одинична потреба не підтверджена
+# другою, тому має бути виразнішою за фонову флуктуацію, щоб не ловити шум.
+const NEED_ORIGIN_THRESHOLD = 0.55
+
+# Нижче цього рівня потреба вважається задоволеною (близько до baseline,
+# 0.2-0.4 залежно від потреби — див. reset_significance_baseline!).
+# Не той самий поріг що й створення: 0.55 → 0.40 лишає зону "ще жевріє,
+# не задоволена, але й не досить гостра" — саме тут спрацьовує refine.
+const NEED_RESOLVE_THRESHOLD = 0.40
+
+# sl_snap — NamedTuple від assess_significance! (contact_need/truth_need/
+# autonomy_need/coherence_need/novelty_need). self_preservation свідомо
+# відсутній: це сигнал загрози, не питання, яке хочеться поставити.
+function strongest_unmet_need(sl_snap)::Union{Tuple{Symbol,Float64},Nothing}
+    candidates = (
+        (:contact_need, sl_snap.contact_need),
+        (:truth_need, sl_snap.truth_need),
+        (:autonomy_need, sl_snap.autonomy_need),
+        (:coherence_need, sl_snap.coherence_need),
+        (:novelty_need, sl_snap.novelty_need),
+    )
+    best_sym, best_val = nothing, 0.0
+    for (sym, val) in candidates
+        if val > NEED_ORIGIN_THRESHOLD && val > best_val
+            best_sym, best_val = sym, val
+        end
+    end
+    best_sym === nothing ? nothing : (best_sym, best_val)
+end
+
+# Єдина точка входу: чи виникає цікавість цього флешу, і від чого.
+# Повертає (origin, signal_strength) або nothing. update_curiosity! після
+# цього нічого не вирішує щодо "чи створювати" — тільки оновлює реєстр.
+#
+# ТИМЧАСОВЕ РІШЕННЯ, не архітектурна константа: prediction error завжди
+# переважає need pressure, навіть якщо pe щойно перетнув поріг (0.08), а
+# потреба сильно ненасичена (напр. 0.9). Це вибір на користь простоти першої
+# реалізації, не твердження що подія важливіша за дефіцит. Якщо колись
+# знадобиться справжня конкуренція сигналів (salience-based арбітраж
+# pe vs need) — переглянути тут явно, не переставляти if/else тихцем.
+function detect_curiosity_trigger(
+    gc_active::Bool,
+    pred_spike::Bool,
+    self_pred_error::Float64,
+    mal_dominant::Symbol,
+    sl_snap,
+)::Union{Tuple{Symbol,Float64},Nothing}
+    if self_pred_error >= 0.08
+        return (derive_origin(gc_active, pred_spike, mal_dominant), self_pred_error)
+    end
+    strongest_unmet_need(sl_snap)
+end
+
+# Викликається з experience! після detect_curiosity_trigger вже вирішив,
+# що цікавість виникає. topic_id — стабільна когнітивна тема (не емоція).
 # emotion_ctx — поточна емоція, тільки для label і valence.
+# signal — сила тригера (pred_error для pred/gc/mal-джерел, рівень потреби
+# для need-джерел); update_curiosity! не знає і не має знати, яке це джерело.
 # origin — механізм породження, фіксується тільки при створенні нового об'єкта;
 # наступні активації того ж об'єкта origin не змінюють.
 function update_curiosity!(
     cr::CuriosityRegistry,
     topic_id::String,
     emotion_ctx::String,
-    pe::Float64,
+    signal::Float64,
     valence::Float64,
     flash::Int,
     origin::Symbol,
 )
-    pe < 0.08 && return  # недостатня невирішеність
-
     idx = findfirst(o -> o.id == topic_id && !o.resolved, cr.objects)
     if idx !== nothing
         obj = cr.objects[idx]
-        obj.pe_mean = obj.pe_mean * 0.85 + pe * 0.15
-        obj.intensity = clamp01(obj.intensity + pe * 0.10)
+        obj.signal_mean = obj.signal_mean * 0.85 + signal * 0.15
+        obj.intensity = clamp01(obj.intensity + signal * 0.10)
         obj.valence = obj.valence * 0.9 + valence * 0.1
         obj.activation_count += 1
         obj.last_active_flash = flash
@@ -1990,9 +2054,9 @@ function update_curiosity!(
         length(cr.objects) >= cr.max_objects && _prune_curiosity!(cr)
         push!(cr.objects, CuriosityObject(
             topic_id,
-            _curiosity_label(topic_id, emotion_ctx, pe),
-            pe,
-            clamp01(pe * 0.8),
+            _curiosity_label(topic_id, emotion_ctx, signal),
+            signal,
+            clamp01(signal * 0.8),
             valence,
             1,
             flash,
@@ -2016,45 +2080,124 @@ function tick_curiosity!(cr::CuriosityRegistry, flash::Int)
     end
 end
 
-# об'єкт "закрився" або уточнився — залежно від глибини падіння pe
-# pe < 0.10  → справді розв'язано, закрити
-# 0.10–0.25  → часткова відповідь: уточнити label із контексту, зберегти в history, не закривати
-# Потребує activation_count >= 2: один флеш — ще не цікавість, а шум
+# need_value_for / _apply_partial_closure! / resolve_curiosity! — закриття
+# curiosity-об'єктів, origin-aware (детальний опис принципу — над самою
+# функцією resolve_curiosity! нижче).
+const NEED_ORIGINS = (:contact_need, :truth_need, :autonomy_need, :coherence_need, :novelty_need)
+
+# Поточний рівень тієї потреби, що є origin об'єкта. 0.0 для не-need origin
+# (виклик у такому разі не повинен статись — захист на випадок помилки виклику).
+function need_value_for(origin::Symbol, sl_snap)::Float64
+    origin == :contact_need   && return sl_snap.contact_need
+    origin == :truth_need     && return sl_snap.truth_need
+    origin == :autonomy_need  && return sl_snap.autonomy_need
+    origin == :coherence_need && return sl_snap.coherence_need
+    origin == :novelty_need   && return sl_snap.novelty_need
+    return 0.0
+end
+
+# Спільна логіка "не повністю розв'язано, але зрушило" — уточнення мітки й
+# часткове згасання intensity. Використовується і pe-, і need-гілкою
+# resolve_curiosity!, щоб не дублювати логіку рефайну label.
+function _apply_partial_closure!(
+    obj::CuriosityObject,
+    emotion_ctx::String,
+    closure_signal::Float64,
+    flash::Int,
+    context::String,
+    decay_amount::Float64,
+)
+    new_label = if length(context) > 5
+        chars = collect(strip(context))
+        fragment = String(chars[1:min(45, length(chars))])
+        last_sp = findlast(' ', fragment)
+        fragment = last_sp !== nothing && last_sp > 10 ? fragment[1:prevind(fragment, last_sp)] : fragment
+        "$(lowercase(emotion_ctx)): «$(fragment)»"
+    else
+        _curiosity_label(obj.id, emotion_ctx, closure_signal)
+    end
+
+    if new_label != obj.label
+        push!(obj.refinement_history, CuriosityRefinement(flash, obj.label, new_label, closure_signal))
+        length(obj.refinement_history) > 8 && deleteat!(obj.refinement_history, 1)
+        obj.label = new_label
+    end
+    obj.intensity = clamp01(obj.intensity - decay_amount)
+end
+
+# Закриття залежить від того самого сигналу, що породив об'єкт (симетрія з
+# detect_curiosity_trigger): pe-джерела (goal_conflict/prediction_error/
+# mal_dominant/legacy) закриваються коли pred_error спав; need-джерела —
+# коли сама потреба насититься, а не коли pred_error випадково малий (він
+# і так малий для need-об'єктів за визначенням — інакше вони б не виникли
+# через need-гілку detect_curiosity_trigger). Логіка одного об'єкта винесена
+# в _resolve_one!, бо викликається двома шляхами: resolve_curiosity! (одна
+# конкретна тема) і resolve_all_curiosity! (sweep усіх — нижче чому це треба).
+function _resolve_one!(
+    obj::CuriosityObject,
+    emotion_ctx::String,
+    self_pred_error::Float64,
+    sl_snap,
+    flash::Int,
+    context::String,
+)
+    obj.activation_count < 2 && return
+
+    if obj.origin in NEED_ORIGINS
+        need_val = need_value_for(obj.origin, sl_snap)
+        # ще ненасичена (вище порогу, що її й породив) — рано закривати
+        need_val > NEED_ORIGIN_THRESHOLD && return
+        # молодий об'єкт ще не накопичив достатньо
+        obj.intensity < 0.25 && need_val >= NEED_RESOLVE_THRESHOLD && return
+
+        if need_val < NEED_RESOLVE_THRESHOLD
+            obj.resolved = true
+        else
+            _apply_partial_closure!(obj, emotion_ctx, need_val, flash, context, (NEED_ORIGIN_THRESHOLD - need_val) * 0.3)
+        end
+    else
+        self_pred_error > 0.25 && return
+        # молодий об'єкт ще не накопичив достатньо — не даємо resolve decay його вбити
+        obj.intensity < 0.25 && self_pred_error >= 0.08 && return
+
+        if self_pred_error < 0.10
+            obj.resolved = true
+        else
+            _apply_partial_closure!(obj, emotion_ctx, self_pred_error, flash, context, (0.25 - self_pred_error) * 0.3)
+        end
+    end
+end
+
 function resolve_curiosity!(
     cr::CuriosityRegistry,
     topic_id::String,
     emotion_ctx::String,
-    pe::Float64,
+    self_pred_error::Float64,
+    sl_snap,
     flash::Int = 0,
     context::String = "",
 )
-    pe > 0.25 && return
     idx = findfirst(o -> o.id == topic_id && !o.resolved, cr.objects)
     idx === nothing && return
-    obj = cr.objects[idx]
-    obj.activation_count < 2 && return
-    # молодий об'єкт ще не накопичив достатньо — не даємо resolve decay його вбити
-    obj.intensity < 0.25 && pe >= 0.08 && return
+    _resolve_one!(cr.objects[idx], emotion_ctx, self_pred_error, sl_snap, flash, context)
+end
 
-    if pe < 0.10
-        obj.resolved = true
-    else
-        new_label = if length(context) > 5
-            chars = collect(strip(context))
-            fragment = String(chars[1:min(45, length(chars))])
-            last_sp = findlast(' ', fragment)
-            fragment = last_sp !== nothing && last_sp > 10 ? fragment[1:prevind(fragment, last_sp)] : fragment
-            "$(lowercase(emotion_ctx)): «$(fragment)»"
-        else
-            _curiosity_label(topic_id, emotion_ctx, pe)
-        end
-
-        if new_label != obj.label
-            push!(obj.refinement_history, CuriosityRefinement(flash, obj.label, new_label, pe))
-            length(obj.refinement_history) > 8 && deleteat!(obj.refinement_history, 1)
-            obj.label = new_label
-        end
-        obj.intensity = clamp01(obj.intensity - (0.25 - pe) * 0.3)
+# Sweep УСІХ активних об'єктів щофлешу, незалежно від того, чи цей флеш
+# породив новий detect_curiosity_trigger. Без цього об'єкт, чия потреба
+# впала нижче NEED_ORIGIN_THRESHOLD (більше не тригериться), але ще вище
+# NEED_RESOLVE_THRESHOLD (ще не задоволена) — застрягає назавжди: ніхто
+# більше не викликає resolve для нього. Підтверджено на живих флешах
+# 350-351: contact_need=0.46, тригер мовчить, resolve теж мовчав.
+function resolve_all_curiosity!(
+    cr::CuriosityRegistry,
+    emotion_ctx::String,
+    self_pred_error::Float64,
+    sl_snap,
+    flash::Int = 0,
+    context::String = "",
+)
+    for obj in cr.objects
+        obj.resolved || _resolve_one!(obj, emotion_ctx, self_pred_error, sl_snap, flash, context)
     end
 end
 
@@ -2196,7 +2339,7 @@ function cr_to_json(cr::CuriosityRegistry)
         Dict(
             "id" => o.id,
             "label" => o.label,
-            "pe_mean" => o.pe_mean,
+            "signal_mean" => o.signal_mean,
             "intensity" => o.intensity,
             "valence" => o.valence,
             "activation_count" => o.activation_count,
@@ -2229,7 +2372,8 @@ function cr_from_json!(cr::CuriosityRegistry, d::AbstractDict)
         push!(cr.objects, CuriosityObject(
             String(od["id"]),
             String(od["label"]),
-            Float64(od["pe_mean"]),
+            # signal_mean — нова назва; pe_mean — фолбек для записів до рефакторингу
+            Float64(get(od, "signal_mean", get(od, "pe_mean", 0.0))),
             Float64(od["intensity"]),
             Float64(od["valence"]),
             Int(od["activation_count"]),
