@@ -941,17 +941,48 @@ function experience!(
 
     # CuriosityRegistry: topic_id — стабільна когнітивна тема, не емоція.
     # Обчислюємо після _arb щоб мати реальний dominant_loop як fallback.
+    # detect_curiosity_trigger вирішує ЧИ виникає цікавість і ВІД ЧОГО
+    # (pred_error/gc/mal, або, якщо pe замалий — одинична ненасичена потреба);
+    # update_curiosity! після цього нічого не вирішує, тільки оновлює реєстр.
     let _gc_active = a.goal_conflict.tension > 0.35
-        _topic_id = derive_topic_id(
-            a.goal_conflict.need_a,
-            a.goal_conflict.need_b,
+        _trigger = detect_curiosity_trigger(
             _gc_active,
-            "",
+            pred.spike,
+            Float64(a.spm.self_pred_error),
             _arb.dominant_loop,
+            sl_snap,
         )
-        _origin = derive_origin(_gc_active, pred.spike, _arb.dominant_loop)
-        update_curiosity!(a.curiosity_registry, _topic_id, primary, Float64(a.spm.self_pred_error), Float64(vad[1]), a.flash_count, _origin)
-        resolve_curiosity!(a.curiosity_registry, _topic_id, primary, Float64(a.spm.self_pred_error), a.flash_count, user_message)
+        if _trigger !== nothing
+            _origin, _signal = _trigger
+            # need-джерело: топік = сама потреба, не mal_dominant/gc — інакше
+            # об'єкт втратить зв'язок з тим, що його насправді породило.
+            _topic_id = if _origin in NEED_ORIGINS
+                String(_origin)
+            else
+                derive_topic_id(
+                    a.goal_conflict.need_a,
+                    a.goal_conflict.need_b,
+                    _gc_active,
+                    "",
+                    _arb.dominant_loop,
+                )
+            end
+            update_curiosity!(a.curiosity_registry, _topic_id, primary, _signal, Float64(vad[1]), a.flash_count, _origin)
+        end
+
+        # Resolve/refine ВСІХ активних об'єктів щофлешу, незалежно від того,
+        # чи цей флеш породив новий trigger вище. Інакше об'єкт, чия потреба
+        # впала нижче NEED_ORIGIN_THRESHOLD (тригер мовчить), але ще вище
+        # NEED_RESOLVE_THRESHOLD (ще не задоволена), застрягає назавжди — ніхто
+        # більше не викликає resolve для нього. Підтверджено на живих флешах
+        # 350-351: contact_need=0.46, тригер мовчить, resolve теж мовчав.
+        _resolved_before = Set(o.id for o in a.curiosity_registry.objects if o.resolved)
+        resolve_all_curiosity!(a.curiosity_registry, primary, Float64(a.spm.self_pred_error), sl_snap, a.flash_count, user_message)
+        for o in a.curiosity_registry.objects
+            if o.resolved && !(o.id in _resolved_before)
+                @info "[CURIOSITY_RESOLVED] \"$(o.label)\" origin=$(o.origin) flash=$(a.flash_count)"
+            end
+        end
     end
 
     # LatentBuffer + StructuralScars
