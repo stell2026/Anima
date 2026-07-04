@@ -716,10 +716,14 @@ var PATTERNS = [
     handle:function(m, st){
       st.causal.events.push('🔀 churn: ' + m[1]);
     }},
-  { re:/^\[CONTACT_SAT\]\s+contact_need=([\d.]+)/,
+  { re:/^\[CURIOSITY_RESOLVED\]\s+(.+)/,
     handle:function(m, st){
-      st.causal.events.push('🤝 contact_sat: need=' + m[1]);
-      st.self.contactNeed = parseFloat(m[1]);
+      st.causal.events.push('✅ resolved: ' + m[1]);
+    }},
+  { re:/^\[CONTACT_SAT\]\s+contact_need\s+([\d.]+)\s*→\s*([\d.]+)/,
+    handle:function(m, st){
+      st.causal.events.push('🤝 contact_sat: ' + m[1] + ' → ' + m[2]);
+      st.self.contactNeed = parseFloat(m[2]);
     }},
   { re:/^\[IGNITION:(\w+)\]\s+recalled=(\S+)\s+sim=([\d.]+)\s+w=([\d.]+)\s+gap=([\d.]+)\s+source=(\S+)/,
     handle:function(m, st){
