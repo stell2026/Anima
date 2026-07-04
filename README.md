@@ -77,6 +77,12 @@ The project is R&D and explores whether internal structure alone can give rise t
 
 Recent updates, in brief:
 
+- **Need-driven curiosity — questions can arise from an unmet internal need, not only from prediction error.** Previously `update_curiosity!` was hard-gated by `self_pred_error >= 0.08`, so a single saturated need (e.g. `contact_need` at 0.9, no partner need, no prediction error) could never produce a `CuriosityObject` — `GoalConflict`'s paired thresholds only fire when *two* needs cross 0.38 together. Trigger detection and object maintenance were split into separate responsibilities: `detect_curiosity_trigger(gc_active, pred_spike, self_pred_error, mal_dominant, sig_layer)` returns `(origin, signal_strength)` or `nothing` — prediction error still takes priority when both are present (a temporary simplicity choice, not an architectural claim about which matters more); when pred_error is below threshold, `strongest_unmet_need()` checks the five psychological needs against a 0.55 threshold, higher than the paired-conflict threshold since a single need lacks corroboration. `update_curiosity!` no longer knows about `pe` specifically — it takes a generic `signal`; `pe_mean` renamed to `signal_mean` (old persisted key kept as a fallback on load). First live need-origin object confirmed: `origin=:contact_need`, correct label, tracked signal 0.93 → 0.46 across flashes 329–359.
+
+  Making closure origin-aware surfaced a real bug: `resolve_curiosity!` was only ever called from inside the same trigger check that creates objects, so once a need's level dropped *below* the creation threshold (0.55) but stayed *above* the resolve threshold (0.40), it stopped being a "trigger" and consequently never got checked for resolution again — orphaned indefinitely. Not hypothetical: caught live on flashes 350–351 (`contact_need=0.46`, no `CONTACT_SAT`, no resolve, silence). Fixed by decoupling create/update (still trigger-gated, correctly) from resolve (now `resolve_all_curiosity!`, sweeping every unresolved object every flash regardless of what triggered that flash). Confirmed live on flash 366: two previously-orphaned objects — one `origin=:epistemic_uncertainty`, one `origin=:social_signal` — closed via the same sweep, meaning the bug predated need-driven curiosity and had already been silently affecting prediction-error-origin objects. `[CURIOSITY_RESOLVED]` is now logged explicitly; this transition previously had no log line at all.
+
+  Cross-referencing these logs against `anima_console.html` also surfaced an unrelated pre-existing mismatch: the `[CONTACT_SAT]` regex expected `contact_need=X` but the actual log format is `contact_need X → Y` — it never matched, silently dropping these events from the causal panel's log-parsing path. Fixed; a separate structured `ev.kind` WebSocket channel may already have covered the same data independently (unconfirmed without `anima_gui_bridge.jl`).
+
 - **`CuriosityObject` origin — why a question arose, separate from what it's about.** The first attempt at typing curiosity objects derived a `query_type` from `topic_id` (the theme) — tested on live data and dropped: theme and question-type turned out to be different axes, and the classification was systematically blind on the generic curiosity fallback (where the interesting CAUSE/PREDICTION cases actually live). Replaced with `origin::Symbol`, set once when an object is created and never rewritten on later activations: `derive_origin(gc_active, pred_spike, mal_dominant)` — hierarchy `goal_conflict > prediction_error > social_signal/identity_signal > epistemic_uncertainty`. `pred_spike` (`PredictiveProcessor.is_spike`) was verified before use: it compares current error against the rolling mean of `error_history`, not a fixed cutoff — an adaptive signal already used elsewhere (noradrenaline, fatigue, stimulus classification), not a new threshold invented for this. `latent_tension` is deliberately excluded — `derive_topic_id` is currently always called with `latent_tag=""`, so that branch is dead code. Old persisted objects load with `origin=:legacy` rather than being reconstructed from `topic_id` — reconstruction would repeat the same mistake the topic_id approach made. First live non-legacy object confirmed: `origin=:social_signal`. `:curiosity` REPL command now prints `origin` per object.
 
 - **Life Threads** — a long-term layer above `CuriosityObject`. A `CuriosityThread` is born when a curiosity object has matured (intensity > 0.5, activation_count ≥ 3) and lives independently of whether that object is currently active. `pressure` grows smoothly with idle time (no threshold jump), and drives initiative: a thread with `pressure > 0.6` lowers the initiative cooldown by 25%, making the system more likely to raise a topic it has been carrying for a long time. Threads surface in `build_identity_block` as "thinking about for weeks" context. Persistence via `psyche_save!/load!`.
@@ -342,18 +348,31 @@ L4 ─── Psychic layer
        InnerDialogue: :open / :guarded / :closed
          → disclosure_threshold influenced by shame and contact_need
        CuriosityRegistry: endogenous objects from self-prediction error
-         → update_curiosity! called each flash (pe = self_pred_error)
-         → pe threshold: 0.08
-         → id = derive_topic_id(...): goal_conflict → latent tag → MAL dominant_loop
-         → origin = derive_origin(...), set once at creation, never rewritten:
+                          OR from a single saturated need (no prediction error required)
+         → detect_curiosity_trigger(...) → (origin, signal) | nothing:
+                    self_pred_error >= 0.08 → derive_origin(...) (pred priority, temporary)
+                    else → strongest_unmet_need(sig_layer), threshold 0.55
+         → update_curiosity! called only when a trigger fires; takes a
+                    generic signal, no longer pe-specific (pe_mean → signal_mean)
+         → id = derive_topic_id(...) for pe/gc/mal origins;
+                = the need's own name (e.g. "contact_need") for need origins
+         → origin = set once at creation, never rewritten:
                     goal_conflict > prediction_error (pred.spike) >
                     social_signal/identity_signal > epistemic_uncertainty
+                    > contact_need/truth_need/autonomy_need/coherence_need/novelty_need
          → objects ripen between sessions (gap >= 3h: intensity +0.015/h)
+         → resolve_all_curiosity! sweeps every unresolved object EVERY flash,
+                    independent of whether this flash produced a trigger —
+                    otherwise an object whose signal drops below the creation
+                    threshold but above the resolve threshold is never
+                    re-checked and stays open indefinitely
          → resolve requires activation_count >= 2
-         → pe < 0.10 → resolved; pe 0.10–0.25 → refined, not closed
+         → pe-origins: pe < 0.10 → resolved; 0.10–0.25 → refined, not closed
+         → need-origins: need < 0.40 → resolved; 0.40–0.55 → refined, not closed
          → refinement_history: each partial resolution stores
-            {flash, old_label, new_label, pe} — question evolves with context
+            {flash, old_label, new_label, signal} — question evolves with context
          → label at refinement built from user message fragment, not template
+         → [CURIOSITY_RESOLVED] logged on every resolved transition
          → top object feeds :curiosity_driven initiative
        CommitmentRegistry: long-term commitments carried across sessions
          → Commitment: label, strength (0-1), kept_count, broken_count
