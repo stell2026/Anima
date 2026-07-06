@@ -12,6 +12,28 @@ using JSON3
 using Printf
 using LinearAlgebra
 
+if !isdefined(@__MODULE__, :anima_state_path)
+    function anima_state_path(filename::String)
+        dir = strip(get(ENV, "ANIMA_STATE_DIR", @__DIR__))
+        isempty(dir) && (dir = @__DIR__)
+        dir = isabspath(dir) ? dir : joinpath(@__DIR__, dir)
+        isdir(dir) || mkpath(dir)
+        joinpath(dir, filename)
+    end
+end
+
+if !isdefined(@__MODULE__, :push_gui_event!)
+    push_gui_event!(kind::String, payload::AbstractDict) = nothing
+end
+
+if !isdefined(@__MODULE__, :write_gui_state!)
+    write_gui_state!(a, r; kwargs...) = nothing
+end
+
+if !isdefined(@__MODULE__, :push_gui_chat!)
+    push_gui_chat!(role::String, text::String; flash = nothing, meta = nothing) = nothing
+end
+
 # Підключаємо всі шари — порядок важливий
 include(joinpath(@__DIR__, "anima_core.jl"))
 include(joinpath(@__DIR__, "anima_psyche.jl"))

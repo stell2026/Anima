@@ -865,7 +865,7 @@ function renderEvents(elId, events){
     return;
   }
   var last = events.slice(-12).slice().reverse();
-  el.innerHTML = last.map(function(e){ return '<div>' + e + '</div>'; }).join('');
+  el.innerHTML = last.map(function(e){ return '<div>' + escapeHtml(e) + '</div>'; }).join('');
 }
 
 function renderVitals(v){

@@ -5,6 +5,7 @@
 const GUI_STATE_PATH  = anima_state_path("gui_state.json")
 const GUI_EVENTS_PATH = anima_state_path("gui_events.jsonl")
 const GUI_CHAT_PATH   = anima_state_path("gui_chat.jsonl")
+const GUI_JSONL_LOCK  = ReentrantLock()
 
 # Зберігаємо audit і llm-мету між флешами — щоб новий флеш не обнуляв попередній audit
 mutable struct _GuiBridgeCache
@@ -19,10 +20,12 @@ end
 const _GUI_CACHE = Ref(_GuiBridgeCache(nothing,nothing,nothing,nothing,nothing,nothing,nothing))
 
 function gui_append!(path::String, data)
-    mkpath(dirname(path))
-    open(path, "a") do f
-        JSON3.write(f, data)
-        write(f, "\n")
+    lock(GUI_JSONL_LOCK) do
+        mkpath(dirname(path))
+        open(path, "a") do f
+            JSON3.write(f, data)
+            write(f, "\n")
+        end
     end
 end
 
@@ -113,9 +116,11 @@ end
 function gui_reset_session!()
     # Очищуємо chat і events при кожному новому запуску
     # gui_state.json не чіпаємо — він просто перезаписується при першому флеші
-    for path in [GUI_CHAT_PATH, GUI_EVENTS_PATH]
-        mkpath(dirname(path))
-        open(io -> nothing, path, "w")
+    lock(GUI_JSONL_LOCK) do
+        for path in [GUI_CHAT_PATH, GUI_EVENTS_PATH]
+            mkpath(dirname(path))
+            open(io -> nothing, path, "w")
+        end
     end
     _GUI_CACHE[] = _GuiBridgeCache(nothing, nothing, nothing, nothing, nothing, nothing, nothing)
 end

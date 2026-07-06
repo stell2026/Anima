@@ -343,8 +343,9 @@ $(dominant_note)"""
                 pending_is_initiative = true
             end
 
-            # Poll for new Telegram messages (skip if LLM is busy)
-            text = tg_poll_message(bot)
+            # Не забираємо update з Telegram, доки LLM ще відповідає:
+            # інакше повідомлення вже вважається прочитаним, але не обробляється.
+            text = isnothing(pending_llm) ? tg_poll_message(bot) : nothing
             if !isnothing(text)
                 cmd = String(strip(text))
                 isempty(cmd) && continue

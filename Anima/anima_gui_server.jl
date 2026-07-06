@@ -7,10 +7,27 @@
 # - POST /api/send      — {"text": "..."} → кладе в input_queue, той самий канал, що й термінал
 
 function gui_jsonl_since(path::String, since::Int)
-    lines = isfile(path) ? readlines(path) : String[]
-    start = clamp(since + 1, 1, length(lines) + 1)
-    items = lines[start:end]
-    "[" * join(items, ",") * "]"
+    lock(GUI_JSONL_LOCK) do
+        lines = isfile(path) ? readlines(path) : String[]
+        start = clamp(since + 1, 1, length(lines) + 1)
+        items = String[]
+        for (idx, line) in enumerate(lines[start:end])
+            row = strip(line)
+            try
+                JSON3.read(row)
+                push!(items, row)
+            catch
+                push!(
+                    items,
+                    JSON3.write(Dict(
+                        "kind" => "jsonl_error",
+                        "line" => start + idx - 1,
+                    )),
+                )
+            end
+        end
+        "[" * join(items, ",") * "]"
+    end
 end
 
 function gui_query_since(req)

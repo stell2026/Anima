@@ -1548,25 +1548,26 @@ function repl_with_background!(
     _last_had_ignition = false  # чи спрацював ignition на останньому флеші
     _progress_target_prev = ""  # label top_curiosity з попереднього флешу (Curiosity Closure)
 
-    # Єдина точка входу вводу: термінал і веб-інтерфейс кладуть рядки в один канал,
-    # головний цикл не дбає звідки рядок прийшов.
-    _input_queue = Channel{String}(64)
-    _terminal_reader = @async begin
-        while _REPL_RUNNING[]
-            try
-                print("You> ")
-                line = readline()
-                put!(_input_queue, line)
-            catch
-                break
+    gui_server = nothing
+    try
+        # Єдина точка входу вводу: термінал і веб-інтерфейс кладуть рядки в один канал,
+        # головний цикл не дбає звідки рядок прийшов.
+        _input_queue = Channel{String}(64)
+        _terminal_reader = @async begin
+            while _REPL_RUNNING[]
+                try
+                    print("You> ")
+                    line = readline()
+                    put!(_input_queue, line)
+                catch
+                    break
+                end
             end
         end
-    end
-    gui_reset_session!()
-    gui_server = start_gui_server!(_input_queue; port = 8088)
-    println("  [GUI] Веб-інтерфейс: http://127.0.0.1:8088\n")
+        gui_reset_session!()
+        gui_server = start_gui_server!(_input_queue; port = 8088)
+        println("  [GUI] Веб-інтерфейс: http://127.0.0.1:8088\n")
 
-    try
         while true
             if !isnothing(pending_llm) && isready(pending_llm)
                 llm_reply = take!(pending_llm)
@@ -2478,9 +2479,11 @@ $(dominant_note)"""
     finally
         !bg.stop_signal[] && stop_background!(bg)
         _REPL_RUNNING[] = false
-        try
-            HTTP.close(gui_server)
-        catch
+        if !isnothing(gui_server)
+            try
+                HTTP.close(gui_server)
+            catch
+            end
         end
     end
 end
