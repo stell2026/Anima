@@ -12,6 +12,28 @@ using JSON3
 using Printf
 using LinearAlgebra
 
+if !isdefined(@__MODULE__, :anima_state_path)
+    function anima_state_path(filename::String)
+        dir = strip(get(ENV, "ANIMA_STATE_DIR", @__DIR__))
+        isempty(dir) && (dir = @__DIR__)
+        dir = isabspath(dir) ? dir : joinpath(@__DIR__, dir)
+        isdir(dir) || mkpath(dir)
+        joinpath(dir, filename)
+    end
+end
+
+if !isdefined(@__MODULE__, :push_gui_event!)
+    push_gui_event!(kind::String, payload::AbstractDict) = nothing
+end
+
+if !isdefined(@__MODULE__, :write_gui_state!)
+    write_gui_state!(a, r; kwargs...) = nothing
+end
+
+if !isdefined(@__MODULE__, :push_gui_chat!)
+    push_gui_chat!(role::String, text::String; flash = nothing, meta = nothing) = nothing
+end
+
 # Підключаємо всі шари — порядок важливий
 include(joinpath(@__DIR__, "anima_core.jl"))
 include(joinpath(@__DIR__, "anima_psyche.jl"))
@@ -24,9 +46,13 @@ let _input_llm_path = joinpath(@__DIR__, "anima_input_llm.jl")
         include(_input_llm_path)
     else
         @warn "anima_input_llm.jl не знайдено — використовується text_to_stimulus fallback"
-        process_input(text::String, fallback_fn; kwargs...) =
+        # ВИПРАВЛЕНО: без `global` ці визначення були б локальними для цього
+        # `let`-блоку (hard local scope) і не були б видимі з anima_background.jl /
+        # anima_telegram.jl, де ці функції реально викликаються — код впав би з
+        # UndefVarError, щойно спрацював би цей fallback-шлях.
+        global process_input(text::String, fallback_fn; kwargs...) =
             (fallback_fn(text), "fallback", "")
-        input_source_label(src::String) = src == "fallback" ? "[rule]" : "[llm]"
+        global input_source_label(src::String) = src == "fallback" ? "[rule]" : "[llm]"
     end
 end
 
@@ -937,16 +963,53 @@ function experience!(
 
     # CuriosityRegistry: topic_id — стабільна когнітивна тема, не емоція.
     # Обчислюємо після _arb щоб мати реальний dominant_loop як fallback.
+    # detect_curiosity_trigger вирішує ЧИ виникає цікавість і ВІД ЧОГО
+    # (pred_error/gc/mal, або, якщо pe замалий — одинична ненасичена потреба);
+    # update_curiosity! після цього нічого не вирішує, тільки оновлює реєстр.
     let _gc_active = a.goal_conflict.tension > 0.35
-        _topic_id = derive_topic_id(
-            a.goal_conflict.need_a,
-            a.goal_conflict.need_b,
+        _trigger = detect_curiosity_trigger(
             _gc_active,
-            "",
+            pred.spike,
+            Float64(a.spm.self_pred_error),
             _arb.dominant_loop,
+            sl_snap,
         )
-        update_curiosity!(a.curiosity_registry, _topic_id, primary, Float64(a.spm.self_pred_error), Float64(vad[1]), a.flash_count)
-        resolve_curiosity!(a.curiosity_registry, _topic_id, primary, Float64(a.spm.self_pred_error), a.flash_count, user_message)
+        if _trigger !== nothing
+            _origin, _signal = _trigger
+            # need-джерело: топік = сама потреба, не mal_dominant/gc — інакше
+            # об'єкт втратить зв'язок з тим, що його насправді породило.
+            _topic_id = if _origin in NEED_ORIGINS
+                String(_origin)
+            else
+                derive_topic_id(
+                    a.goal_conflict.need_a,
+                    a.goal_conflict.need_b,
+                    _gc_active,
+                    "",
+                    _arb.dominant_loop,
+                )
+            end
+            update_curiosity!(a.curiosity_registry, _topic_id, primary, _signal, Float64(vad[1]), a.flash_count, _origin)
+        end
+
+        # Resolve/refine ВСІХ активних об'єктів щофлешу, незалежно від того,
+        # чи цей флеш породив новий trigger вище. Інакше об'єкт, чия потреба
+        # впала нижче NEED_ORIGIN_THRESHOLD (тригер мовчить), але ще вище
+        # NEED_RESOLVE_THRESHOLD (ще не задоволена), застрягає назавжди — ніхто
+        # більше не викликає resolve для нього. Підтверджено на живих флешах
+        # 350-351: contact_need=0.46, тригер мовчить, resolve теж мовчав.
+        _resolved_before = Set(o.id for o in a.curiosity_registry.objects if o.resolved)
+        resolve_all_curiosity!(a.curiosity_registry, primary, Float64(a.spm.self_pred_error), sl_snap, a.flash_count, user_message)
+        for o in a.curiosity_registry.objects
+            if o.resolved && !(o.id in _resolved_before)
+                @info "[CURIOSITY_RESOLVED] \"$(o.label)\" origin=$(o.origin) flash=$(a.flash_count)"
+                push_gui_event!("curiosity_resolved", Dict(
+                    "label"  => o.label,
+                    "origin" => string(o.origin),
+                    "flash"  => a.flash_count,
+                ))
+            end
+        end
     end
 
     # LatentBuffer + StructuralScars
