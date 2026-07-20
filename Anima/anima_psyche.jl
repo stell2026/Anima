@@ -1873,6 +1873,10 @@ mutable struct CuriosityObject
     refinement_history::Vector{CuriosityRefinement}
     consecutive_progress::Int  # послідовні progress_signal без churn-розриву
     origin::Symbol           # чому виникла: механізм породження, фіксується один раз при створенні
+    created_flash::Int       # фіксується один раз при створенні; на відміну від last_active_flash
+                              # не оновлюється на активаціях — дає справжній вік об'єкта
+    closure::Symbol          # :none / :satisfied / :compressed / :dormant — ЧОМУ закрилось,
+                              # окремо від resolved::Bool (ЩО закрилось)
 end
 
 mutable struct CuriosityRegistry
@@ -2064,6 +2068,8 @@ function update_curiosity!(
             CuriosityRefinement[],
             0,
             origin,
+            flash,
+            :none,
         ))
     end
 end
@@ -2152,6 +2158,7 @@ function _resolve_one!(
 
         if need_val < NEED_RESOLVE_THRESHOLD
             obj.resolved = true
+            obj.closure = :satisfied
         else
             _apply_partial_closure!(obj, emotion_ctx, need_val, flash, context, (NEED_ORIGIN_THRESHOLD - need_val) * 0.3)
         end
@@ -2162,6 +2169,7 @@ function _resolve_one!(
 
         if self_pred_error < 0.10
             obj.resolved = true
+            obj.closure = :satisfied
         else
             _apply_partial_closure!(obj, emotion_ctx, self_pred_error, flash, context, (0.25 - self_pred_error) * 0.3)
         end
@@ -2199,6 +2207,41 @@ function resolve_all_curiosity!(
     for obj in cr.objects
         obj.resolved || _resolve_one!(obj, emotion_ctx, self_pred_error, sl_snap, flash, context)
     end
+end
+
+# Окрема sweep-функція (не вкладена в resolve_all_curiosity!): closure за віком
+# не потребує live-сигналів (sl_snap/self_pred_error) — це фонова логіка, тому
+# й місце виклику — slow_tick! в anima_background.jl, поруч з tick_curiosity!
+# і decay Life Threads, а не experience! де живуть pe/need-залежні resolve-шляхи.
+function check_closure_all!(cr::CuriosityRegistry, flash::Int)
+    for obj in cr.objects
+        obj.resolved || check_closure!(obj, flash)
+    end
+end
+
+# --- Curiosity Closure (Крок 3, Query-Driven Cognition) -------------------
+# Питання не повинні жити вічно навіть якщо ні pe, ні need формально їх
+# не розв'язали (_resolve_one! мовчить, якщо сигнал так і не спав достатньо).
+# Критерій — вік ВІД СТВОРЕННЯ (не від last_active_flash, яка оновлюється
+# щоактивації) І поточна низька intensity: старе-але-досі-гаряче питання
+# НЕ повинно піти в dormant тільки через час — інакше суперечить самому
+# поняттю dormant ("вже нема енергії", не "просто минув час" — форма без причини).
+const CLOSURE_AGE_THRESHOLD = 64          # CuriosityObject — конкретне питання,
+                                           # інший часовий масштаб ніж CuriosityThread (150)
+const CLOSURE_DORMANT_INTENSITY = 0.15    # той самий поріг, що top_curiosity вважає "активним"
+const COMPRESSION_MIN_PROGRESS = 3        # 1=випадковість, 2=збіг, 3=патерн
+
+# closure=:compressed тут — це compression_candidate, не факт компресії:
+# consecutive_progress рахує послідовні позитивні зсуви, але не гарантує, що
+# вони про той самий узагальнюваний патерн (прогрес по різних аспектах теми
+# теж рахується). Справжній concept-вузол — тільки з Concept Formation
+# (план, п.3): там :compressed об'єкти стануть вхідними кандидатами.
+function check_closure!(obj::CuriosityObject, flash::Int)
+    obj.resolved && return
+    age = flash - obj.created_flash
+    (age > CLOSURE_AGE_THRESHOLD && obj.intensity < CLOSURE_DORMANT_INTENSITY) || return
+    obj.closure = obj.consecutive_progress >= COMPRESSION_MIN_PROGRESS ? :compressed : :dormant
+    obj.resolved = true
 end
 
 function _prune_curiosity!(cr::CuriosityRegistry)
@@ -2347,6 +2390,8 @@ function cr_to_json(cr::CuriosityRegistry)
             "resolved" => o.resolved,
             "consecutive_progress" => o.consecutive_progress,
             "origin" => string(o.origin),
+            "created_flash" => o.created_flash,
+            "closure" => string(o.closure),
             "refinement_history" => [
                 Dict(
                     "flash" => r.flash,
@@ -2382,6 +2427,10 @@ function cr_from_json!(cr::CuriosityRegistry, d::AbstractDict)
             refs,
             Int(get(od, "consecutive_progress", 0)),
             Symbol(get(od, "origin", "legacy")),
+            # created_flash — нове поле; для старих записів найкраще наближення,
+            # не 0 (0 зробив би древні об'єкти миттєво "старими" за CLOSURE_AGE_THRESHOLD)
+            Int(get(od, "created_flash", get(od, "last_active_flash", 0))),
+            Symbol(get(od, "closure", Bool(get(od, "resolved", false)) ? "satisfied" : "none")),
         ))
     end
 end
