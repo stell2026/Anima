@@ -437,6 +437,26 @@ function psyche_slow_tick!(a::Anima)
     end
 
     tick_curiosity!(a.curiosity_registry, a.flash_count)
+    # Closure (Крок 3, Query-Driven Cognition): sweep за віком, незалежно від
+    # того чи цей тик щось активував. before/after по id — щоб зловити саме
+    # ЩОЙНО закриті об'єкти, не re-log вже resolved з минулих тиків.
+    let
+        _pre_open_ids = Set(o.id for o in a.curiosity_registry.objects if !o.resolved)
+        check_closure_all!(a.curiosity_registry, a.flash_count)
+        for obj in a.curiosity_registry.objects
+            if obj.id in _pre_open_ids && obj.resolved && obj.closure in (:compressed, :dormant)
+                _age = a.flash_count - obj.created_flash
+                @info "[CURIOSITY_CLOSED] \"$(obj.label)\" closure=$(obj.closure) age=$(_age) consecutive=$(obj.consecutive_progress)"
+                push_gui_event!("curiosity_closed", Dict(
+                    "label"       => obj.label,
+                    "closure"     => string(obj.closure),
+                    "age"         => _age,
+                    "consecutive" => Int(obj.consecutive_progress),
+                    "flash"       => a.flash_count,
+                ))
+            end
+        end
+    end
     # Life Threads: surface активні CuriosityObjects, decay idle threads
     top_co_for_thread = top_curiosity_any(a.curiosity_registry)
     if !isnothing(top_co_for_thread) &&
