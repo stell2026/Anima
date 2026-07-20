@@ -720,6 +720,10 @@ var PATTERNS = [
     handle:function(m, st){
       st.causal.events.push('✅ resolved: ' + m[1]);
     }},
+  { re:/^\[CURIOSITY_CLOSED\]\s+(.+)/,
+    handle:function(m, st){
+      st.causal.events.push('🗜️ closed: ' + m[1]);
+    }},
   { re:/^\[CONTACT_SAT\]\s+contact_need\s+([\d.]+)\s*→\s*([\d.]+)/,
     handle:function(m, st){
       st.causal.events.push('🤝 contact_sat: ' + m[1] + ' → ' + m[2]);
@@ -1135,6 +1139,10 @@ function routeLiveEvent(ev){
     renderEvents('causalEvents', liveState.causal.events);
   } else if(ev.kind === 'curiosity_resolved'){
     liveState.causal.events.push('✅ resolved: "' + (ev.label || '') + '" origin=' + (ev.origin || '') + ' flash=' + (ev.flash || ''));
+    renderEvents('causalEvents', liveState.causal.events);
+  } else if(ev.kind === 'curiosity_closed'){
+    var icon = ev.closure === 'compressed' ? '🗜️' : '💤';
+    liveState.causal.events.push(icon + ' closed(' + (ev.closure || '') + '): "' + (ev.label || '') + '" age=' + (ev.age || '') + ' cons=' + (ev.consecutive || '') + ' flash=' + (ev.flash || ''));
     renderEvents('causalEvents', liveState.causal.events);
   } else if(ev.kind === 'contact_sat'){
     liveState.self.contactNeed = ev.contact_need != null ? ev.contact_need : liveState.self.contactNeed;
