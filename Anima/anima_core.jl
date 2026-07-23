@@ -1060,3 +1060,53 @@ function core_load!(
         0
     end
 end
+
+# --- Ablation-тести суб'єктності --------------------------------------
+# Флаги вимкнення окремих шарів для перевірки чи змінюється поведінка.
+# Дефолт — усе ввімкнено (нормальний режим); задається через ENV при старті,
+# runtime-перемикання (REPL, без рестарту) — окремий крок, не тут.
+struct AblationFlags
+    use_memory::Bool       # episodic/semantic recall + dialog summaries + echo
+    use_sbg::Bool          # SelfBeliefGraph: belief conflict, attractor_stability, epistemic_trust
+    use_agency::Bool       # AgencyLoop: identity_threat, causal_ownership update
+    use_latent::Bool       # LatentBuffer: resistance accumulation, breakthrough
+    use_body::Bool         # EmbodiedState + InteroceptiveInference (allostatic_load)
+    use_state_prompt::Bool # весь state-блок у LLM-промпті (identity_block, memory echo, template)
+end
+
+AblationFlags(;
+    use_memory::Bool = true,
+    use_sbg::Bool = true,
+    use_agency::Bool = true,
+    use_latent::Bool = true,
+    use_body::Bool = true,
+    use_state_prompt::Bool = true,
+) = AblationFlags(use_memory, use_sbg, use_agency, use_latent, use_body, use_state_prompt)
+
+_env_flag(name::String, default::Bool)::Bool = begin
+    v = strip(lowercase(get(ENV, name, "")))
+    isempty(v) && return default
+    v in ("0", "false", "off", "no") ? false : true
+end
+
+"""Зчитує ablation-флаги з ENV: ANIMA_ABLATE_MEMORY / _SBG / _AGENCY / _LATENT / _BODY / _STATE_PROMPT.
+Кожна змінна вимикає шар при значенні "0"/"false"/"off"/"no"; відсутність змінної = увімкнено (дефолт)."""
+ablation_flags_from_env()::AblationFlags = AblationFlags(
+    use_memory       = _env_flag("ANIMA_ABLATE_MEMORY", true),
+    use_sbg          = _env_flag("ANIMA_ABLATE_SBG", true),
+    use_agency       = _env_flag("ANIMA_ABLATE_AGENCY", true),
+    use_latent       = _env_flag("ANIMA_ABLATE_LATENT", true),
+    use_body         = _env_flag("ANIMA_ABLATE_BODY", true),
+    use_state_prompt = _env_flag("ANIMA_ABLATE_STATE_PROMPT", true),
+)
+
+function ablation_summary(af::AblationFlags)::String
+    off = String[]
+    af.use_memory       || push!(off, "memory")
+    af.use_sbg           || push!(off, "sbg")
+    af.use_agency        || push!(off, "agency")
+    af.use_latent        || push!(off, "latent")
+    af.use_body          || push!(off, "body")
+    af.use_state_prompt  || push!(off, "state_prompt")
+    isempty(off) ? "усі шари увімкнено" : "вимкнено: " * join(off, ", ")
+end
