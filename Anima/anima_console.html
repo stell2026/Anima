@@ -642,9 +642,13 @@ function renderHelp(){
 }
 
 // ───── sparkline ─────
-var SPARK_MAX = 30;
+// SPARK_MAX збільшено з 30 до 200: тепер історія (causal_trace/audit_log) підвантажується
+// один раз при старті через /api/history, тож вікно спарклайну має сенс ширший за
+// "останні 30 live-точок цієї вкладки".
+var SPARK_MAX = 200;
 var metricHistory = {
-  phi:[], bpm:[], agency:[], spe:[], vfeDrift:[], coh:[], D:[], S:[], N:[]
+  phi:[], bpm:[], agency:[], spe:[], vfeDrift:[], coh:[], D:[], S:[], N:[],
+  identityDrift:[], auditScore:[]
 };
 
 function pushHistory(key, val){
@@ -719,6 +723,10 @@ var PATTERNS = [
   { re:/^\[CURIOSITY_RESOLVED\]\s+(.+)/,
     handle:function(m, st){
       st.causal.events.push('✅ resolved: ' + m[1]);
+    }},
+  { re:/^\[CURIOSITY_CLOSED\]\s+(.+)/,
+    handle:function(m, st){
+      st.causal.events.push('🗜️ closed: ' + m[1]);
     }},
   { re:/^\[CONTACT_SAT\]\s+contact_need\s+([\d.]+)\s*→\s*([\d.]+)/,
     handle:function(m, st){
@@ -911,7 +919,8 @@ function renderSelf(s){
   rows.push(metricRow('disclosure', s.disclosure ? ('[' + s.disclosure + '] thr=' + fmt(s.disclosureThr)) : '—'));
   rows.push(metricRow('shadow p', fmt(s.shadowP)));
   rows.push(metricRow('contact need', fmt(s.contactNeed)));
-  rows.push(metricRow('identity drift', fmt(s.identityDrift)));
+  rows.push(metricRowSpark('identity drift', fmt(s.identityDrift),
+    sparklineSvg(metricHistory.identityDrift, '#D4506A')));
   rows.push(metricRow('chronic S↓', s.chronicLowSerotonin != null ? String(s.chronicLowSerotonin) : '—'));
   document.getElementById('selfMetrics').innerHTML = rows.join('');
   document.getElementById('selfLabel').textContent = s.flashId ? ('#' + s.flashId) : '—';
@@ -1011,7 +1020,8 @@ function renderCausal(c){
   var rows = [];
   var auditVal = (c.auditScore != null && c.auditScore > 0) ? fmt(c.auditScore) : '—';
   var coVal = (c.auditCo != null && c.auditCo > 0) ? fmt(c.auditCo) : '—';
-  rows.push(metricRow('audit score', auditVal));
+  rows.push(metricRowSpark('audit score', auditVal,
+    sparklineSvg(metricHistory.auditScore, '#5DBFB8')));
   rows.push(metricRow('endorsed', c.endorsed || '—'));
   rows.push(metricRow('co', coVal));
   var cfStr = ((c.cfCo != null) ? fmt(c.cfCo) : '—') + ' / ' + ((c.cfAgencyCo != null) ? fmt(c.cfAgencyCo) : '—');
@@ -1101,6 +1111,10 @@ function applyLiveState(raw){
   pushHistory('vfeDrift', v.vfeDrift);
   pushHistory('D', v.D); pushHistory('S', v.S); pushHistory('N', v.N);
   pushHistory('agency', s.agency); pushHistory('spe', s.spe); pushHistory('coh', s.coh);
+  pushHistory('identityDrift', s.identityDrift);
+  // audit_score рахується не на кожному флеші — кешоване (останнє відоме) значення
+  // тримається сталим між аудитами; 0/відсутнє не пушимо, щоб не забивати графік нулями
+  if(c.auditScore != null && c.auditScore > 0) pushHistory('auditScore', c.auditScore);
 
   // live stats: показуємо flash id і кількість повідомлень у чаті
   document.getElementById('statsBar').innerHTML =
@@ -1132,6 +1146,13 @@ function routeLiveEvent(ev){
     renderEvents('causalEvents', liveState.causal.events);
   } else if(ev.kind === 'curiosity_churn'){
     liveState.causal.events.push('🔀 churn: ' + (ev.label || '') + ' → ' + (ev.new_label || ''));
+    renderEvents('causalEvents', liveState.causal.events);
+  } else if(ev.kind === 'curiosity_resolved'){
+    liveState.causal.events.push('✅ resolved: "' + (ev.label || '') + '" origin=' + (ev.origin || '') + ' flash=' + (ev.flash || ''));
+    renderEvents('causalEvents', liveState.causal.events);
+  } else if(ev.kind === 'curiosity_closed'){
+    var icon = ev.closure === 'compressed' ? '🗜️' : '💤';
+    liveState.causal.events.push(icon + ' closed(' + (ev.closure || '') + '): "' + (ev.label || '') + '" age=' + (ev.age || '') + ' cons=' + (ev.consecutive || '') + ' flash=' + (ev.flash || ''));
     renderEvents('causalEvents', liveState.causal.events);
   } else if(ev.kind === 'contact_sat'){
     liveState.self.contactNeed = ev.contact_need != null ? ev.contact_need : liveState.self.contactNeed;
@@ -1354,8 +1375,27 @@ document.addEventListener('click', function(e){
   }
 });
 
+function fetchHistory(){
+  fetch('/api/history?n=200')
+    .then(function(r){ if(!r.ok) throw new Error('history '+r.status); return r.json(); })
+    .then(function(data){
+      var ct = data.causal_trace || [];
+      ct.forEach(function(row){
+        pushHistory('phi', row.phi);
+        pushHistory('D', row.nt_dopamine); pushHistory('S', row.nt_serotonin); pushHistory('N', row.nt_noradrenaline);
+        pushHistory('identityDrift', row.identity_drift);
+      });
+      var au = data.audit_log || [];
+      au.forEach(function(row){
+        if(row.audit_score != null && row.audit_score > 0) pushHistory('auditScore', row.audit_score);
+      });
+    })
+    .catch(function(){ /* історія — best effort, консоль лишається робочою без неї */ });
+}
+
 renderHelp();
 renderTermHelp();
+fetchHistory();
 pollOnce();
 setInterval(pollOnce, 400);
 
