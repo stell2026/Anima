@@ -1371,6 +1371,11 @@ function execute_gui_cmd(cmd::String)::String
             cs = crisis_snapshot(a.crisis, a.flash_count)
             println(io, "\n  Mode: $(cs.mode_name) | Coherence=$(cs.coherence)")
             println(io, "  $(cs.note)")
+        elseif cmd == ":ablation"
+            af = a.ablation
+            println(io, "\n  [ABLATION] $(ablation_summary(af))")
+            println(io, "  memory=$(af.use_memory) sbg=$(af.use_sbg) agency=$(af.use_agency) latent=$(af.use_latent) body=$(af.use_body) state_prompt=$(af.use_state_prompt)")
+            println(io, "  Перемикання лише через ENV при старті (ANIMA_ABLATE_*) — runtime-toggle не реалізовано.")
         elseif cmd == ":curiosity"
             objs = active_curiosities(a.curiosity_registry)
             if isempty(objs)
@@ -1863,6 +1868,7 @@ function repl_with_background!(
                                 progress_signal     = Int(_ct.progress_signal),
                                 progress_target     = _ct.progress_target,
                                 churn               = Int(_ct.churn),
+                                identity_drift      = Float64(a.agency.identity_drift),
                             ))
                             write_gui_state!(a, _last_r; audit = _audit, cf_co = cf_co)
                         catch e
@@ -2166,6 +2172,11 @@ $(dominant_note)"""
             elseif cmd == ":save"
                 save!(a; verbose = true)
                 println("[Збережено]")
+            elseif cmd == ":ablation"
+                af = a.ablation
+                println("\n  [ABLATION] $(ablation_summary(af))")
+                println("  memory=$(af.use_memory) sbg=$(af.use_sbg) agency=$(af.use_agency) latent=$(af.use_latent) body=$(af.use_body) state_prompt=$(af.use_state_prompt)")
+                println("  Перемикання лише через ENV при старті (ANIMA_ABLATE_*) — runtime-toggle не реалізовано.\n")
             elseif cmd == ":state"
                 snap = nt_snapshot(a.nt)
                 vad = to_vad(a.nt);
