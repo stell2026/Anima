@@ -5,6 +5,7 @@
 # - GET  /api/events   — gui_events.jsonl, ?since=N (N — скільки рядків клієнт вже має)
 # - GET  /api/chat      — gui_chat.jsonl, той самий ?since=N
 # - POST /api/send      — {"text": "..."} → кладе в input_queue, той самий канал, що й термінал
+# - GET  /api/history   — персистентна історія трендів (causal_trace + audit_log), ?n=N
 
 function gui_jsonl_since(path::String, since::Int)
     lock(GUI_JSONL_LOCK) do
@@ -86,6 +87,30 @@ function start_gui_server!(input_queue::Channel{String}; port::Int = 8088, dir::
         try
             state = gui_live_state(a)
             HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(state))
+        catch e
+            HTTP.Response(500, ["Content-Type" => "application/json"],
+                JSON3.write(Dict("error" => sprint(showerror, e))))
+        end
+    end)
+
+    # Тренди в часі: персистентна історія (переживає рестарт консолі/сервера).
+    # ?n= — скільки останніх флешів-з-відповіддю віддати (дефолт 200).
+    HTTP.register!(router, "GET", "/api/history", req -> begin
+        mem = _GUI_MEM[]
+        if isnothing(mem)
+            return HTTP.Response(503, ["Content-Type" => "application/json"], "{\"error\":\"mem not ready\"}")
+        end
+        try
+            uri = HTTP.URI(req.target)
+            q = HTTP.queryparams(uri)
+            n = try parse(Int, get(q, "n", "200")) catch; 200 end
+            ct = causal_trace_history(mem.db; n = n)
+            au = audit_score_history(mem.db; n = n)
+            body = JSON3.write(Dict(
+                "causal_trace" => ct,
+                "audit_log" => au,
+            ))
+            HTTP.Response(200, ["Content-Type" => "application/json"], body)
         catch e
             HTTP.Response(500, ["Content-Type" => "application/json"],
                 JSON3.write(Dict("error" => sprint(showerror, e))))
