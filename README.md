@@ -75,6 +75,10 @@ The project is R&D and explores whether internal structure alone can give rise t
 
 Recent updates, in brief:
 
+- **Ablation testing.** `AblationFlags` — six independent switches (`use_memory`, `use_sbg`, `use_agency`, `use_latent`, `use_body`, `use_state_prompt`), default all-on, set via `ANIMA_ABLATE_*` environment variables at startup (no runtime toggle yet — that would need to handle disabling a layer mid-session without corrupting already-accumulated state, deliberately deferred). Each flag gates its layer at the point it would otherwise feed `experience!` or `build_llm_messages`: e.g. `use_sbg=false` forces `belief_conflict` to `nothing` and feeds `compute_phi` neutral 0.5 instead of live `attractor_stability`/`epistemic_trust`; `use_state_prompt=false` bypasses the entire state block and sends the LLM raw user text with no identity_block, memory echo, or D-vector. `:ablation` REPL command reports current flag state. This is infrastructure for testing whether a layer is load-bearing or decorative — the actual off/on behavioral comparison tooling (replaying the same input through both configurations) is a separate next step: `causal_trace.stimulus_keys` currently stores only key names, not raw values, so true replay isn't possible yet without a schema addition.
+
+- **Time trends made honest.** The existing GUI sparklines (`phi`, `bpm`, `D/S/N`, `agency`, `spe`, `coh`) were purely client-side — a 30-point JS array that resets on every page reload, which is narrative dressing on top of the current moment rather than a real trend. `identity_drift` is now persisted to `causal_trace` (new column + idempotent migration for existing databases), and a new `GET /api/history` endpoint (`anima_gui_server.jl`) serves the last N `causal_trace`/`audit_log` rows. The console fetches this once on load, before live polling starts, and seeds `identity_drift` and `audit_score` sparklines from it — both now survive a page reload and a server restart. Known limitation, left open rather than glossed over: `causal_trace`/`audit_log` are only written on flashes with an LLM reply, so this is a trend of the conversation, not of background drift during silence between sessions — the latter would need a separate write path from `slow_tick!`, not yet built.
+
 - **Need-driven curiosity — questions can arise from an unmet internal need, not only from prediction error.** Previously `update_curiosity!` was hard-gated by `self_pred_error >= 0.08`, so a single saturated need (e.g. `contact_need` at 0.9, no partner need, no prediction error) could never produce a `CuriosityObject` — `GoalConflict`'s paired thresholds only fire when *two* needs cross 0.38 together. Trigger detection and object maintenance were split into separate responsibilities: `detect_curiosity_trigger(gc_active, pred_spike, self_pred_error, mal_dominant, sig_layer)` returns `(origin, signal_strength)` or `nothing` — prediction error still takes priority when both are present (a temporary simplicity choice, not an architectural claim about which matters more); when pred_error is below threshold, `strongest_unmet_need()` checks the five psychological needs against a 0.55 threshold, higher than the paired-conflict threshold since a single need lacks corroboration. `update_curiosity!` no longer knows about `pe` specifically — it takes a generic `signal`; `pe_mean` renamed to `signal_mean` (old persisted key kept as a fallback on load). First live need-origin object confirmed: `origin=:contact_need`, correct label, tracked signal 0.93 → 0.46 across flashes 329–359.
 
   Making closure origin-aware surfaced a real bug: `resolve_curiosity!` was only ever called from inside the same trigger check that creates objects, so once a need's level dropped *below* the creation threshold (0.55) but stayed *above* the resolve threshold (0.40), it stopped being a "trigger" and consequently never got checked for resolution again — orphaned indefinitely. Not hypothetical: caught live on flashes 350–351 (`contact_need=0.46`, no `CONTACT_SAT`, no resolve, silence). Fixed by decoupling create/update (still trigger-gated, correctly) from resolve (now `resolve_all_curiosity!`, sweeping every unresolved object every flash regardless of what triggered that flash). Confirmed live on flash 366: two previously-orphaned objects — one `origin=:epistemic_uncertainty`, one `origin=:social_signal` — closed via the same sweep, meaning the bug predated need-driven curiosity and had already been silently affecting prediction-error-origin objects. `[CURIOSITY_RESOLVED]` is now logged explicitly; this transition previously had no log line at all.
@@ -647,7 +651,7 @@ The system can speak first for several independent reasons. `:contact` is intent
 | `other_model` | Accumulated patterns about the interlocutor — topic frequency, pressure events, open exchanges |
 | `other_model_hypotheses` | Active Theory of Mind: one open hypothesis per type with `predicted_state`, `confidence`, resolved into `outcome` and continuous `error_score` |
 | `audit_log` | SubjectivityAudit — five causal questions per flash with scores; chronic low score signals the architecture is wide but not deep |
-| `causal_trace` | Full causal chain per flash — from stimulus keys through NT, φ, intent, policy, MAL arbitration (`dominant_loop`, `regime`, `score`, `runner_up`, `runner_up_score`, `loop_scores`), drive conflict (`dom_drive_nt`, `dom_drive_mal`, `drive_conflict`), to speech, endorsement, and Curiosity Closure Signal (`progress_signal`, `progress_target`, `churn`) |
+| `causal_trace` | Full causal chain per flash — from stimulus keys through NT, φ, intent, policy, MAL arbitration (`dominant_loop`, `regime`, `score`, `runner_up`, `runner_up_score`, `loop_scores`), drive conflict (`dom_drive_nt`, `dom_drive_mal`, `drive_conflict`), to speech, endorsement, Curiosity Closure Signal (`progress_signal`, `progress_target`, `churn`), and `identity_drift` (persisted time-trend source for the GUI) |
 
 ---
 
@@ -660,7 +664,7 @@ The system can speak first for several independent reasons. `:contact` is intent
 ├── anima_crisis.jl         # Crisis monitor: modes, coherence
 ├── anima_interface.jl      # Main entry point: Anima, experience!, LLM calls
 ├── anima_input_llm.jl      # Input LLM — translates text into JSON stimulus
-├── anima_memory_db.jl      # SQLite memory: episodic, semantic, affect, spatial recall, reconsolidation
+├── anima_memory_db.jl      # SQLite memory: episodic, semantic, affect, spatial recall, reconsolidation, trend history
 ├── anima_narrative.jl      # Narrative Self — long-term identity without LLM
 ├── anima_subjectivity.jl   # Prediction loop, stances, interpretation, belief emergence
 ├── anima_audit.jl          # SubjectivityAudit — causal scoring per flash, audit_log SQLite
@@ -670,7 +674,7 @@ The system can speak first for several independent reasons. `:contact` is intent
 │
 ├── anima_console.html      # Web GUI — live monitoring dashboard
 ├── anima_gui_bridge.jl     # Structured JSON state-mirroring for the GUI
-├── anima_gui_server.jl     # HTTP server: serves GUI, exposes /api/state, /api/chat, /api/send, /api/cmd
+├── anima_gui_server.jl     # HTTP server: serves GUI, exposes /api/state, /api/chat, /api/send, /api/cmd, /api/history
 ├── anima_gui_settings.jl   # GUI settings persistence (language, models, tokens)
 │
 ├── llm/
