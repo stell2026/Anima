@@ -358,7 +358,8 @@ CREATE TABLE IF NOT EXISTS causal_trace (
     causal_ownership REAL    NOT NULL DEFAULT 0.0,
     progress_signal  INTEGER NOT NULL DEFAULT 0,
     progress_target  TEXT    NOT NULL DEFAULT '',
-    churn            INTEGER NOT NULL DEFAULT 0
+    churn            INTEGER NOT NULL DEFAULT 0,
+    identity_drift   REAL    NOT NULL DEFAULT 0.0
 );
 """,
     )
@@ -367,7 +368,7 @@ CREATE TABLE IF NOT EXISTS causal_trace (
         "CREATE INDEX IF NOT EXISTS idx_ctrace_flash ON causal_trace(flash DESC);",
     )
 
-    # Міграція: causal_trace могла існувати до MAL (без mal_* колонок).
+    # Міграція: causal_trace могла існувати до MAL / до identity_drift (Тренди в часі).
     # CREATE TABLE IF NOT EXISTS вище не додає колонки до існуючої таблиці —
     # додаємо їх вручну, ідемпотентно.
     let existing_cols = Set(
@@ -388,6 +389,7 @@ CREATE TABLE IF NOT EXISTS causal_trace (
             ("dom_drive_nt",        "TEXT NOT NULL DEFAULT ''"),
             ("dom_drive_mal",       "TEXT NOT NULL DEFAULT ''"),
             ("drive_conflict",      "INTEGER NOT NULL DEFAULT 0"),
+            ("identity_drift",      "REAL NOT NULL DEFAULT 0.0"),
         )
         for (col, decl) in _mal_migrations
             if !(col in existing_cols)
@@ -411,8 +413,8 @@ function save_causal_trace!(db::SQLite.DB, trace::NamedTuple)
             mal_runner_up, mal_runner_up_score, mal_loop_scores,
             dom_drive_nt, dom_drive_mal, drive_conflict,
             speech_length, self_hear_mismatch, endorsed, causal_ownership,
-            progress_signal, progress_target, churn)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            progress_signal, progress_target, churn, identity_drift)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             trace.flash,
             trace.timestamp,
@@ -443,11 +445,59 @@ function save_causal_trace!(db::SQLite.DB, trace::NamedTuple)
             trace.progress_signal,
             trace.progress_target,
             trace.churn,
+            trace.identity_drift,
         ),
     )
 end
 
-# --- Endorsement update ---------------------------------------------------
+# --- Тренди в часі: історія для GUI-спарклайнів ---------------------------
+# Дані вже персистентні (causal_trace пишеться на кожному флеші з LLM-відповіддю;
+# audit_log — на кожному аудиті); тут лише читання останніх N записів для консолі.
+
+"""Останні n записів causal_trace (NT/phi/identity_drift), у хронологічному порядку
+(найстаріший перший — так консоль може одразу малювати зліва направо)."""
+function causal_trace_history(db::SQLite.DB; n::Int = 200)
+    rows = DBInterface.execute(
+        db,
+        """SELECT flash, nt_serotonin, nt_dopamine, nt_noradrenaline, phi, identity_drift
+           FROM causal_trace
+           ORDER BY flash DESC
+           LIMIT ?""",
+        (n,),
+    )
+    result = NamedTuple[]
+    for r in rows
+        push!(
+            result,
+            (
+                flash = r.flash,
+                nt_serotonin = r.nt_serotonin,
+                nt_dopamine = r.nt_dopamine,
+                nt_noradrenaline = r.nt_noradrenaline,
+                phi = r.phi,
+                identity_drift = r.identity_drift,
+            ),
+        )
+    end
+    reverse(result)
+end
+
+"""Останні n записів audit_log (audit_score), у хронологічному порядку."""
+function audit_score_history(db::SQLite.DB; n::Int = 200)
+    rows = DBInterface.execute(
+        db,
+        """SELECT flash, audit_score
+           FROM audit_log
+           ORDER BY flash DESC
+           LIMIT ?""",
+        (n,),
+    )
+    result = NamedTuple[]
+    for r in rows
+        push!(result, (flash = r.flash, audit_score = r.audit_score))
+    end
+    reverse(result)
+end
 
 function update_episodic_endorsement!(mem::MemoryDB, flash::Int, endorsed::String)
     DBInterface.execute(
