@@ -1842,6 +1842,8 @@ function repl_with_background!(
                                 flash               = _ct.flash,
                                 timestamp           = _ct.timestamp,
                                 stimulus_keys       = _ct.stimulus_keys,
+                                stimulus_values      = _ct.stimulus_values,
+                                user_message        = _ct.user_message,
                                 memory_bias         = _ct.memory_bias,
                                 nt_serotonin        = _ct.nt_serotonin,
                                 nt_dopamine         = _ct.nt_dopamine,
