@@ -631,6 +631,8 @@ mutable struct CausalTrace
     flash::Int
     timestamp::Float64
     stimulus_keys::String       # ключі стимулу через кому — що прийшло ззовні
+    stimulus_values::String     # JSON стимулу (ключ→значення) — сирі дані для чесного replay
+    user_message::String        # текст повідомлення людини цього флешу — без нього social_delta/curiosity/inner_dialogue не відтворити
     memory_bias::Float64        # скільки пам'ять додала до стимулу (норма mem_d)
     nt_serotonin::Float64
     nt_dopamine::Float64
@@ -664,7 +666,7 @@ mutable struct CausalTrace
 end
 
 CausalTrace(flash::Int) = CausalTrace(
-    flash, time(), "", 0.0,
+    flash, time(), "", "{}", "", 0.0,
     0.0, 0.0, 0.0, 0.0, 0.0,
     "", 0.0, "",
     "", "", 0.0, "", "", 0.0, "",
@@ -1054,6 +1056,8 @@ function experience!(
     # CausalTrace: фіксуємо ланцюг до speech (решта в background)
     _ctrace = CausalTrace(a.flash_count)
     _ctrace.stimulus_keys    = join(sort(collect(keys(stimulus_raw))), ",")
+    _ctrace.stimulus_values  = JSON3.write(stimulus_raw)
+    _ctrace.user_message     = user_message
     _ctrace.memory_bias      = Float64(norm(collect(values(mem_d))))
     _ctrace.nt_serotonin     = Float64(a.nt.serotonin)
     _ctrace.nt_dopamine      = Float64(a.nt.dopamine)
