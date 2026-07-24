@@ -239,6 +239,7 @@ mutable struct Anima
     boredom::Float64                  # стимульне виснаження: виростає без новизни, decay при новому
     attention_focus::AttentionFocus   # конкурентний фокус уваги
     last_endorsement::Symbol          # результат останнього evaluate_endorsement: :endorsed / :automatic / :not_mine
+    ablation::AblationFlags           # ablation-тести: які шари увімкнено
 end
 
 function Anima(;
@@ -246,6 +247,7 @@ function Anima(;
     values = ValueSystem(),
     core_mem_path = joinpath(@__DIR__, "anima_core.json"),
     psyche_mem_path = joinpath(@__DIR__, "anima_psyche.json"),
+    ablation::AblationFlags = AblationFlags(),
 )
     a = Anima(
         personality,
@@ -314,6 +316,7 @@ function Anima(;
         0.0,                 # boredom
         AttentionFocus(),    # attention_focus
         :automatic,          # last_endorsement
+        ablation,            # ablation
     )
     # Завантажити
     saved = core_load!(
@@ -628,6 +631,8 @@ mutable struct CausalTrace
     flash::Int
     timestamp::Float64
     stimulus_keys::String       # ключі стимулу через кому — що прийшло ззовні
+    stimulus_values::String     # JSON стимулу (ключ→значення) — сирі дані для чесного replay
+    user_message::String        # текст повідомлення людини цього флешу — без нього social_delta/curiosity/inner_dialogue не відтворити
     memory_bias::Float64        # скільки пам'ять додала до стимулу (норма mem_d)
     nt_serotonin::Float64
     nt_dopamine::Float64
@@ -661,7 +666,7 @@ mutable struct CausalTrace
 end
 
 CausalTrace(flash::Int) = CausalTrace(
-    flash, time(), "", 0.0,
+    flash, time(), "", "{}", "", 0.0,
     0.0, 0.0, 0.0, 0.0, 0.0,
     "", 0.0, "",
     "", "", 0.0, "", "", 0.0, "",
@@ -682,17 +687,20 @@ function experience!(
     stim = copy(stimulus_raw)
 
     # Structural opposition: чи повідомлення людини суперечить центральному переконанню?
+    # [ABLATION use_sbg] вимкнено — belief_conflict завжди nothing, як без SelfBeliefGraph
     belief_conflict =
-        isempty(user_message) ? nothing : detect_belief_conflict(a.sbg, user_message)
+        (a.ablation.use_sbg && !isempty(user_message)) ?
+            detect_belief_conflict(a.sbg, user_message) : nothing
     a._last_belief_conflict = belief_conflict
-    if !isnothing(belief_conflict)
-        # Накопичуємо в LatentBuffer
+    if !isnothing(belief_conflict) && a.ablation.use_latent
+        # [ABLATION use_latent] вимкнено — resistance не накопичується
         a.latent_buffer.resistance =
             clamp01(a.latent_buffer.resistance + belief_conflict.signal_strength * 0.4)
         @info "[RESISTANCE] переконання під тиском: \"$(belief_conflict.belief_name)\" signal=$(belief_conflict.signal_strength)"
     end
     # D-вектор: оновлюємо накопичений тиск на ідентичність
-    update_identity_threat!(a.agency, belief_conflict)
+    # [ABLATION use_agency] вимкнено — identity_threat не оновлюється, лишається на попередньому значенні
+    a.ablation.use_agency && update_identity_threat!(a.agency, belief_conflict)
 
     # Social mirror
     if !isempty(user_message)
@@ -702,7 +710,8 @@ function experience!(
     end
 
     # Memory resonance
-    mem_d = resonance_delta(a.memory, stim)
+    # [ABLATION use_memory] вимкнено — без резонансу асоціативної пам'яті
+    mem_d = a.ablation.use_memory ? resonance_delta(a.memory, stim) : Dict{String,Float64}()
     combined = Dict(
         k=>get(stim, k, 0.0)+get(mem_d, k, 0.0) for k in union(keys(stim), keys(mem_d))
     )
@@ -710,7 +719,8 @@ function experience!(
     # NT + body
     apply_stimulus!(a.nt, combined)
     decay_to_baseline!(a.nt, decay_rate(a.personality))
-    update_from_nt!(a.body, a.nt)
+    # [ABLATION use_body] вимкнено — тіло заморожене на baseline, NT все одно рахується (окремий шар)
+    a.ablation.use_body && update_from_nt!(a.body, a.nt)
 
     # Heartbeat
     hb_snap = tick_heartbeat!(a.heartbeat, a.nt)
@@ -748,14 +758,15 @@ function experience!(
     decay_toward_base!(a.emotion_map)
 
     # IIT φ_prior
+    # [ABLATION use_sbg / use_body] вимкнено — нейтральні значення (0.5) замість живих sbg/interoception
     phi_prior = compute_phi(
         a.iit,
         vad,
         t,
         c,
-        a.sbg.attractor_stability,
-        a.sbg.epistemic_trust,
-        a.interoception.allostatic_load,
+        a.ablation.use_sbg ? a.sbg.attractor_stability : 0.5,
+        a.ablation.use_sbg ? a.sbg.epistemic_trust : 0.5,
+        a.ablation.use_body ? a.interoception.allostatic_load : 0.3,
     )
     phi = phi_prior
 
@@ -1045,6 +1056,8 @@ function experience!(
     # CausalTrace: фіксуємо ланцюг до speech (решта в background)
     _ctrace = CausalTrace(a.flash_count)
     _ctrace.stimulus_keys    = join(sort(collect(keys(stimulus_raw))), ",")
+    _ctrace.stimulus_values  = JSON3.write(stimulus_raw)
+    _ctrace.user_message     = user_message
     _ctrace.memory_bias      = Float64(norm(collect(values(mem_d))))
     _ctrace.nt_serotonin     = Float64(a.nt.serotonin)
     _ctrace.nt_dopamine      = Float64(a.nt.dopamine)
@@ -1380,7 +1393,8 @@ function experience!(
     end
 
     # Memory + imprint
-    mem_res = length(recall(a.memory, stim))
+    # [ABLATION use_memory] вимкнено — mem_res=0 (recall не впливає на mem_resonance у result); store! лишається — вимикати запис не потрібно для behavioral ablation
+    mem_res = a.ablation.use_memory ? length(recall(a.memory, stim)) : 0
     store!(a.memory, stim, named, vad, intensity)
     imprint!(a.personality, named, intensity)
 
@@ -2449,6 +2463,21 @@ function build_llm_messages(
     want::String = "",
     mem_db = nothing,
 )::Vector{Dict{String,String}}
+    if !a.ablation.use_state_prompt
+        # [ABLATION use_state_prompt] вимкнено — LLM отримує лише сирий текст, без identity_block/
+        # state-шаблону/memory echo/D-вектора/TRUTH-GUARD. Найпростіший і найповніший гейт.
+        _sys = read_text_file(
+            "llm/system_prompt.txt";
+            fallback = "Ти — Anima. Говори від першої особи. Мова: українська.",
+        )
+        _mem = isempty(memory_block) ? history_to_memory_block(history) : memory_block
+        _content = isempty(_mem) ? user_input : "$(_mem)\n\n$(user_input)"
+        return Vector{Dict{String,String}}([
+            Dict{String,String}("role"=>"system", "content"=>_sys),
+            Dict{String,String}("role"=>"user", "content"=>_content),
+        ])
+    end
+
     sys_text = read_text_file(
         "llm/system_prompt.txt";
         fallback = "Ти — Anima. Говори від першої особи. Мова: українська.",
@@ -2491,7 +2520,8 @@ function build_llm_messages(
     end
     mem = isempty(memory_block) ? history_to_memory_block(history) : memory_block
 
-    if !isnothing(mem_db)
+    # [ABLATION use_memory] вимкнено — без dialog summaries і без трьох echo-просторів (тіло/контакт/я)
+    if !isnothing(mem_db) && a.ablation.use_memory
         try
             summaries = recall_dialog_summaries(mem_db; n = DIALOG_SUMMARY_RECALL)
             if !isempty(summaries)
