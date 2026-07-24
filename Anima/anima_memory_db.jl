@@ -333,6 +333,8 @@ CREATE TABLE IF NOT EXISTS causal_trace (
     flash            INTEGER NOT NULL,
     timestamp        REAL    NOT NULL,
     stimulus_keys    TEXT    NOT NULL DEFAULT '',
+    stimulus_values  TEXT    NOT NULL DEFAULT '{}',
+    user_message     TEXT    NOT NULL DEFAULT '',
     memory_bias      REAL    NOT NULL DEFAULT 0.0,
     nt_serotonin     REAL    NOT NULL DEFAULT 0.0,
     nt_dopamine      REAL    NOT NULL DEFAULT 0.0,
@@ -390,6 +392,8 @@ CREATE TABLE IF NOT EXISTS causal_trace (
             ("dom_drive_mal",       "TEXT NOT NULL DEFAULT ''"),
             ("drive_conflict",      "INTEGER NOT NULL DEFAULT 0"),
             ("identity_drift",      "REAL NOT NULL DEFAULT 0.0"),
+            ("stimulus_values",     "TEXT NOT NULL DEFAULT '{}'"),
+            ("user_message",        "TEXT NOT NULL DEFAULT ''"),
         )
         for (col, decl) in _mal_migrations
             if !(col in existing_cols)
@@ -406,7 +410,7 @@ function save_causal_trace!(db::SQLite.DB, trace::NamedTuple)
     DBInterface.execute(
         db,
         """INSERT INTO causal_trace
-           (flash, timestamp, stimulus_keys, memory_bias,
+           (flash, timestamp, stimulus_keys, stimulus_values, user_message, memory_bias,
             nt_serotonin, nt_dopamine, nt_noradrenaline,
             phi, gc_tension, intent_goal, intent_strength, policy_drive,
             mal_dominant, mal_regime, mal_score, mal_determinant,
@@ -414,11 +418,13 @@ function save_causal_trace!(db::SQLite.DB, trace::NamedTuple)
             dom_drive_nt, dom_drive_mal, drive_conflict,
             speech_length, self_hear_mismatch, endorsed, causal_ownership,
             progress_signal, progress_target, churn, identity_drift)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             trace.flash,
             trace.timestamp,
             trace.stimulus_keys,
+            trace.stimulus_values,
+            trace.user_message,
             trace.memory_bias,
             trace.nt_serotonin,
             trace.nt_dopamine,
