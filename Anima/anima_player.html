@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<title>ANIMA — Плеєр</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --border: #30363d;
+    --accent: #7dd3c8;
+    --text: #c9d1d9;
+    --dim: #6e7681;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Consolas", "SF Mono", monospace;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+  }
+  #panel {
+    width: 420px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 24px;
+  }
+  h1 {
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin: 0 0 18px 0;
+  }
+  #dropzone {
+    border: 1px dashed var(--border);
+    border-radius: 4px;
+    padding: 28px 12px;
+    text-align: center;
+    color: var(--dim);
+    font-size: 13px;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  #dropzone.drag {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  #track {
+    margin-top: 18px;
+    font-size: 14px;
+    min-height: 20px;
+    word-break: break-word;
+  }
+  #track.empty { color: var(--dim); font-style: italic; }
+  #progress-wrap {
+    margin-top: 10px;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  #progress-bar {
+    height: 100%;
+    width: 0%;
+    background: var(--accent);
+    transition: width 0.3s linear;
+  }
+  #times {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--dim);
+    margin-top: 4px;
+  }
+  #controls {
+    display: flex;
+    gap: 8px;
+    margin-top: 20px;
+  }
+  button {
+    flex: 1;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 0;
+    font-family: inherit;
+    font-size: 13px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  button:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  button:disabled {
+    color: var(--dim);
+    cursor: default;
+    opacity: 0.5;
+  }
+  #status-line {
+    margin-top: 14px;
+    font-size: 11px;
+    color: var(--dim);
+  }
+  input[type=file] { display: none; }
+</style>
+</head>
+<body>
+
+<div id="panel">
+  <h1>Anima :: player</h1>
+
+  <div id="dropzone">
+    трек сюди (mp3), або клік
+    <input type="file" id="file-input" accept="audio/*">
+  </div>
+
+  <div id="track" class="empty">нічого не завантажено</div>
+  <div id="progress-wrap"><div id="progress-bar"></div></div>
+  <div id="times"><span id="t-cur">0:00</span><span id="t-dur">0:00</span></div>
+
+  <div id="controls">
+    <button id="btn-play" disabled>▶ play</button>
+    <button id="btn-pause" disabled>⏸ pause</button>
+    <button id="btn-stop" disabled>⏹ stop</button>
+  </div>
+
+  <div id="status-line">—</div>
+</div>
+
+<script>
+// Контракт з бекендом (anima_gui_server.jl, ще не підключено на цьому кроці):
+//   POST /api/music/upload   (multipart, поле "file")
+//   POST /api/music/play
+//   POST /api/music/pause
+//   POST /api/music/stop
+//   GET  /api/music/status   -> {track_name, is_playing, position_sec, duration_sec, bpm}
+
+const dropzone   = document.getElementById('dropzone');
+const fileInput  = document.getElementById('file-input');
+const trackEl    = document.getElementById('track');
+const progressBar= document.getElementById('progress-bar');
+const tCur       = document.getElementById('t-cur');
+const tDur       = document.getElementById('t-dur');
+const btnPlay    = document.getElementById('btn-play');
+const btnPause   = document.getElementById('btn-pause');
+const btnStop    = document.getElementById('btn-stop');
+const statusLine = document.getElementById('status-line');
+
+function fmtTime(sec) {
+  sec = Math.max(0, Math.floor(sec || 0));
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return m + ':' + String(s).padStart(2, '0');
+}
+
+async function upload(file) {
+  statusLine.textContent = 'завантажую ' + file.name + '...';
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const res = await fetch('/api/music/upload', { method: 'POST', body: fd });
+    if (!res.ok) throw new Error(await res.text());
+    statusLine.textContent = 'завантажено';
+  } catch (e) {
+    statusLine.textContent = 'помилка завантаження: ' + e.message;
+  }
+  refreshStatus();
+}
+
+dropzone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => {
+  if (fileInput.files.length) upload(fileInput.files[0]);
+});
+dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('drag'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+dropzone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropzone.classList.remove('drag');
+  if (e.dataTransfer.files.length) upload(e.dataTransfer.files[0]);
+});
+
+async function sendControl(action) {
+  try {
+    await fetch('/api/music/' + action, { method: 'POST' });
+  } catch (e) {
+    statusLine.textContent = 'команда не пройшла: ' + e.message;
+  }
+  refreshStatus();
+}
+btnPlay.addEventListener('click',  () => sendControl('play'));
+btnPause.addEventListener('click', () => sendControl('pause'));
+btnStop.addEventListener('click',  () => sendControl('stop'));
+
+async function refreshStatus() {
+  try {
+    const res = await fetch('/api/music/status');
+    if (!res.ok) return;
+    const s = await res.json();
+
+    if (s.track_name) {
+      trackEl.textContent = s.track_name;
+      trackEl.classList.remove('empty');
+      btnPlay.disabled = s.is_playing;
+      btnPause.disabled = !s.is_playing;
+      btnStop.disabled = !s.is_playing && s.position_sec === 0;
+    } else {
+      trackEl.textContent = 'нічого не завантажено';
+      trackEl.classList.add('empty');
+      btnPlay.disabled = btnPause.disabled = btnStop.disabled = true;
+    }
+
+    const dur = s.duration_sec || 0;
+    const pos = s.position_sec || 0;
+    progressBar.style.width = dur > 0 ? (100 * pos / dur) + '%' : '0%';
+    tCur.textContent = fmtTime(pos);
+    tDur.textContent = fmtTime(dur);
+
+    statusLine.textContent = s.is_playing
+      ? 'грає' + (s.bpm ? ' · ~' + Math.round(s.bpm) + ' bpm' : '')
+      : (s.track_name ? 'пауза' : '—');
+  } catch (e) {
+    statusLine.textContent = 'нема зв\'язку з бекендом';
+  }
+}
+
+setInterval(refreshStatus, 1000);
+refreshStatus();
+</script>
+
+</body>
+</html>
