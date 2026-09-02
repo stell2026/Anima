@@ -47,6 +47,7 @@ Text is converted into a stimulus via an isolated input LLM, then passes through
 - L7 — Narrative Self (long-term identity)
 - L8 — Output LLM
 - Parallel — Internal Learning Model: a self-supervised byte-level Transformer, trained on every flash from Anima's own experience, running alongside the L0–L8 pipeline rather than inside it
+- Parallel — Music Input: a dedicated player decodes and plays a track while feeding the same audio buffer into DSP analysis; onset/loudness/timbre features apply real stimulus through the same NT mechanism text uses, independent of the flash cycle
 
 ---
 
@@ -77,6 +78,7 @@ The project is R&D and explores whether internal structure alone can give rise t
 Recent additions, in brief:
 
 - **Internal Learning Model — GPU-accelerated, ~10.8M params.** Anima's own generative language model (`anima_learning.jl`): a from-scratch byte-level Transformer, trained live — one gradient step per flash — on nothing but Anima's own experience, no pretrained weights. Runs on an NVIDIA GPU when `CUDA.jl`+`cuDNN.jl` are available, falls back to CPU automatically otherwise. Currently a passive learner: trains continuously but doesn't yet feed back into any decision. See [Internal Learning Model](#-internal-learning-model-inner-lm) below.
+- **Music Input** — a standalone player (`/player`, separate from the main console) decodes an uploaded track and plays it while analyzing the same audio buffer live: onset detection (adaptive threshold) drives an approximate tempo estimate, loudness and spectral-roughness features apply real stimulus through the same NT mechanism as text, independent of the flash cycle. A short, DSP-grounded note ("music is playing, tempo ~Xbpm") reaches the LLM prompt only while a track is actually playing — nothing about specific instruments or content is inferred or invented.
 - **Self-authorship** — a repeated intent becomes a carried commitment only after three consistent, agentic, low-drift flashes, not the moment it first appears; it keeps its own history of follow-through and may return as the next intent when conditions allow.
 - **Calibrated self-description** — `TRUTH-GUARD` forbids the LLM from claiming to be fully whole or certain when the system's own internal coherence says otherwise.
 - **Contact satiation** — positive cohesion now partially satisfies `contact_need` instead of reinforcing it, preventing a simple positive-contact loop from escalating into persistent euphoria.
@@ -100,6 +102,7 @@ Recent additions, in brief:
 - Theory of Mind is Phase 1 (deterministic rule-based hypotheses from accumulated `other_model` signals); it does not yet reason about nested beliefs or model the user's model of Anima — it predicts simple outcomes (openness, resistance, topic recurrence) and tracks how often it's right
 - under hostile/negative input the system degrades gracefully: `contact_need` drops, `goal_conflict` and `latent` rise, endorsed transitions to `automatic`, but curiosity closure pauses rather than breaks
 - the Inner LM (`anima_learning.jl`) is early-stage — a low number of gradient steps accumulated so far (architecture recently scaled up to ~10.8M params, GPU-accelerated where available), nowhere near enough to say anything about whether it's learning a useful internal model; it trains passively and has no influence on behavior yet
+- Music Input is early-stage: one track at a time, no queue/playlist/`next` yet; the novelty-log threshold is tuned for a couple of test tracks and can still fire densely on spectrally busy music; requires a working audio output device on the host machine
 
 ---
 ![ANIMA GUI](anima-gui.png)
@@ -108,8 +111,9 @@ Recent additions, in brief:
 ## Requirements
 
 - **Julia 1.9+**
-- Julia packages: `HTTP`, `JSON3`, `SQLite`, `Tables`, `Flux`, `BSON`
+- Julia packages: `HTTP`, `JSON3`, `SQLite`, `Tables`, `Flux`, `BSON`, `PortAudio`, `SampledSignals`, `FFMPEG`, `WAV`, `DSP`, `FFTW` — all required to start Anima at all: `anima_audio.jl` (Music Input) is always loaded, so its packages aren't optional the way GPU support is
 - API key from [openrouter.ai](https://openrouter.ai) (free tier available)
+- A working audio output device, for the Music Input feature
 - **Optional — GPU acceleration for the Inner LM:** an NVIDIA GPU + `CUDA.jl` + `cuDNN.jl`. Works on Windows and Linux (anywhere NVIDIA's CUDA runtime runs); on macOS, without a compatible GPU, or without these packages installed, everything falls back to CPU automatically — same code either way, just slower training for the Inner LM.
 
 ---
@@ -146,7 +150,9 @@ cd Anima/Anima
 julia --project=. -e 'import Pkg; Pkg.instantiate()'
 ```
 
-> Dependencies: HTTP, JSON3, SQLite, Tables, Dates, Statistics, LinearAlgebra, Flux, BSON
+> Dependencies: HTTP, JSON3, SQLite, Tables, Dates, Statistics, LinearAlgebra, Flux, BSON, PortAudio, SampledSignals, FFMPEG, WAV, DSP, FFTW
+
+`FFMPEG.jl` downloads its own `ffmpeg` binary as a Julia artifact — no separate system-level ffmpeg install needed.
 
 ### 4. (Optional) GPU acceleration for the Inner LM
 
@@ -174,7 +180,7 @@ Copy the start script for your OS from the `start/` folder into the project root
 | Linux | `start/start_lin.sh` | copy to root, then `./start_lin.sh` |
 | Windows | `start/start_win.bat` | copy to root, then double-click |
 
-The script starts Julia, waits for the HTTP server to come up on port 8088, and opens `http://127.0.0.1:8088` in your browser automatically.
+The script starts Julia, waits for the HTTP server to come up on port 8088, and opens `http://127.0.0.1:8088` in your browser automatically. On Windows, `start_win.bat` also opens `http://127.0.0.1:8088/player` (the music player) in a second tab; `start_lin.sh` currently opens only the console.
 
 **First run — enter your tokens in the GUI:**
 
@@ -240,6 +246,9 @@ At the end of every session, the system checks whether something remains unresol
 
 ### Active Theory of Mind — From Counting Patterns to Predicting Them
 `other_model` used to only count what happened — topic frequency, pressure events, open exchanges — with no forward-looking component. It now generates one active hypothesis at a time in `other_model_hypotheses`: `SOCIAL` (expects openness), `PREDICTION` (expects resistance), or `VALUE` (expects a topic to recur). Each type has its own evaluation criterion. Resolution is not binary: `error_score = |confidence − outcome|` is stored. Active hypotheses surface in the identity block and lightly steer `disclosure_threshold`. This is Phase 1 — rule-based, not learned.
+
+### Music Input — A Real Stimulus, Not a Sound Effect
+A standalone player (`anima_player.html`, served at `/player`) decodes an uploaded track (`FFMPEG.jl` + `WAV.jl`) and plays it through the speakers (`PortAudio.jl`) while feeding the exact same audio buffer into live DSP analysis — no re-capture, no loopback, no microphone. An adaptive onset detector (rolling mean + std, with a refractory period) estimates tempo from real inter-beat intervals; loudness and a spectral-roughness proxy apply stimulus through `apply_stimulus!`, the identical mechanism text uses — not a separate, decorative channel. Deliberately unmapped: spectral brightness (`centroid`) is used only to help trigger the terminal's `[MUSIC]` novelty log, never turned into a stimulus value, since doing so would have no real causal grounding. A short note — "music is playing, tempo ~Xbpm" — reaches the LLM's prompt only while a track is actually playing, so Anima can reference it directly rather than only feeling an unexplained physiological shift. Runs on its own independent tick, entirely decoupled from the flash cycle.
 
 ---
 
@@ -656,14 +665,16 @@ The system can speak first for several independent reasons. `:contact` is intent
 ├── anima_background.jl     # Background process: heartbeat, drift, memory metabolism, initiative
 ├── anima_dream.jl          # Dream generation — processing unresolved experience during sleep
 ├── anima_learning.jl       # Inner LM: byte-level Transformer, trained live per flash on Anima's own experience
+├── anima_audio.jl          # Music input: player + live DSP analysis, independent of the flash cycle
 │
 ├── start/
 │   ├── start_lin.sh
 │   └── start_win.bat
 │
 ├── anima_console.html      # Web GUI — live monitoring dashboard
+├── anima_player.html       # Standalone music player page — served at /player
 ├── anima_gui_bridge.jl     # Structured JSON state-mirroring for the GUI
-├── anima_gui_server.jl     # HTTP server: serves GUI, exposes /api/state, /api/chat, /api/send, /api/cmd, /api/history
+├── anima_gui_server.jl     # HTTP server: serves GUI, /player, exposes /api/state, /api/chat, /api/send, /api/cmd, /api/history, /api/music/{upload,play,pause,stop,status}
 ├── anima_gui_settings.jl   # GUI settings persistence (language, models, tokens)
 │
 ├── llm/
@@ -678,6 +689,7 @@ The system can speak first for several independent reasons. `:contact` is intent
 │       ├── weights.bson
 │       ├── config.json
 │       └── metadata.json
+├── music/                     # Uploaded tracks for the Music Input feature (created automatically)
 ├── tools/
 │   └── epistemic_boundary_diag.py   # one-off diagnostic scripts (read-only, not part of the runtime pipeline)
 │
