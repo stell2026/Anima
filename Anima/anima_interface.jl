@@ -36,6 +36,7 @@ end
 
 # Підключаємо всі шари — порядок важливий
 include(joinpath(@__DIR__, "anima_core.jl"))
+include(joinpath(@__DIR__, "anima_audio.jl"))
 include(joinpath(@__DIR__, "anima_psyche.jl"))
 include(joinpath(@__DIR__, "anima_self.jl"))
 include(joinpath(@__DIR__, "anima_crisis.jl"))
@@ -48,9 +49,9 @@ let _input_llm_path = joinpath(@__DIR__, "anima_input_llm.jl")
     else
         @warn "anima_input_llm.jl не знайдено — використовується text_to_stimulus fallback"
         # ВИПРАВЛЕНО: без `global` ці визначення були б локальними для цього
-        # `let`-блоку (hard local scope) і не були б видимі з anima_background.jl /
-        # anima_telegram.jl, де ці функції реально викликаються — код впав би з
-        # UndefVarError, щойно спрацював би цей fallback-шлях.
+        # `let`-блоку (hard local scope) і не були б видимі з anima_background.jl,
+        # де ці функції реально викликаються — код впав би з UndefVarError,
+        # щойно спрацював би цей fallback-шлях.
         global process_input(text::String, fallback_fn; kwargs...) =
             (fallback_fn(text), "fallback", "")
         global input_source_label(src::String) = src == "fallback" ? "[rule]" : "[llm]"
@@ -243,6 +244,7 @@ mutable struct Anima
     last_endorsement::Symbol          # результат останнього evaluate_endorsement: :endorsed / :automatic / :not_mine
     ablation::AblationFlags           # ablation-тести: які шари увімкнено
     inner_lm::InnerLM                 # власна byte-level мовна модель — вчиться щофлешу на (user_message, llm_reply)
+    music_player::MusicPlayer         # музичний вхід: незалежний тик, apply_stimulus! на подіях (anima_audio.jl)
 end
 
 function Anima(;
@@ -323,6 +325,7 @@ function Anima(;
         :automatic,          # last_endorsement
         ablation,            # ablation
         InnerLM(inner_lm_dir), # inner_lm — завантажує наявні ваги з цієї теки або починає з нуля
+        MusicPlayer(),         # music_player — завжди починає з чистого стану, позиція/is_playing не персистяться
     )
     # Завантажити
     saved = core_load!(
@@ -2426,6 +2429,16 @@ function anima_state_snapshot(a::Anima)
             cn = Float64(a.sig_layer.contact_need)
             cn > 0.85 ? "сильне бажання контакту" : cn > 0.70 ? "хочу контакту" : ""
         end,
+        music_note = begin
+            mp = a.music_player
+            if mp.is_playing
+                bpm = mp.features.bpm_estimate
+                bpm === nothing ? "звучить музика" :
+                    "звучить музика, темп ~$(round(Int, bpm))bpm"
+            else
+                ""
+            end
+        end,
         authenticity_veto = a.authenticity_veto,
         silent_disagreement = a.silent_disagreement,
         pending_thought = a.inner_dialogue.pending_thought,
@@ -2497,6 +2510,12 @@ function build_state_prompt(
     if !isempty(state.contact_hunger_note)
         prompt = prompt * "
 [соціальна потреба: $(state.contact_hunger_note)]"
+    end
+    # Музика: тільки те, що DSP реально виміряв (темп, якщо оцінений) -- не "чує скрипку",
+    # instrument recognition поза обсягом; порожньо, коли нічого не грає -- без стимулу нема натяку
+    if !isempty(state.music_note)
+        prompt = prompt * "
+[$(state.music_note)]"
     end
     # Аутентичне вето
     if get(state, :authenticity_veto, false)
