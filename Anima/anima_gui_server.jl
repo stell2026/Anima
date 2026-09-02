@@ -131,6 +131,66 @@ function start_gui_server!(input_queue::Channel{String}; port::Int = 8088, dir::
         end
     end)
 
+    HTTP.register!(router, "GET", "/player", req -> begin
+        html_path = joinpath(dir, "anima_player.html")
+        if isfile(html_path)
+            HTTP.Response(200, ["Content-Type" => "text/html; charset=utf-8"], read(html_path))
+        else
+            HTTP.Response(404, "anima_player.html не знайдено в $(dir)")
+        end
+    end)
+
+    HTTP.register!(router, "POST", "/api/music/upload", req -> begin
+        a = _GUI_ANIMA[]
+        if isnothing(a)
+            return HTTP.Response(503, ["Content-Type" => "application/json"], "{\"ok\":false,\"error\":\"not ready\"}")
+        end
+        try
+            # TODO(перевірити живо): точна назва/сигнатура функції парсингу multipart у
+            # встановленій версії HTTP.jl -- перше, що варто перевірити, якщо цей ендпоінт впаде.
+            parts = HTTP.parse_multipart_form(req)
+            if isnothing(parts) || isempty(parts)
+                return HTTP.Response(400, ["Content-Type" => "application/json"], "{\"ok\":false,\"error\":\"no file part\"}")
+            end
+            part = first(parts)
+            filename = something(part.filename, "track.mp3")
+            dest = joinpath(MUSIC_DIR, filename)
+            open(dest, "w") do f
+                write(f, part.data)
+            end
+            ok = music_load!(a.music_player, dest)
+            HTTP.Response(ok ? 200 : 500, ["Content-Type" => "application/json"], "{\"ok\":$ok}")
+        catch e
+            HTTP.Response(400, ["Content-Type" => "application/json"], "{\"ok\":false,\"error\":\"$(e)\"}")
+        end
+    end)
+
+    HTTP.register!(router, "POST", "/api/music/play", req -> begin
+        a = _GUI_ANIMA[]
+        isnothing(a) || music_play!(a.music_player)
+        HTTP.Response(200, ["Content-Type" => "application/json"], "{\"ok\":true}")
+    end)
+
+    HTTP.register!(router, "POST", "/api/music/pause", req -> begin
+        a = _GUI_ANIMA[]
+        isnothing(a) || music_pause!(a.music_player)
+        HTTP.Response(200, ["Content-Type" => "application/json"], "{\"ok\":true}")
+    end)
+
+    HTTP.register!(router, "POST", "/api/music/stop", req -> begin
+        a = _GUI_ANIMA[]
+        isnothing(a) || music_stop!(a.music_player)
+        HTTP.Response(200, ["Content-Type" => "application/json"], "{\"ok\":true}")
+    end)
+
+    HTTP.register!(router, "GET", "/api/music/status", req -> begin
+        a = _GUI_ANIMA[]
+        if isnothing(a)
+            return HTTP.Response(503, ["Content-Type" => "application/json"], "{\"error\":\"not ready\"}")
+        end
+        HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(music_status(a.music_player)))
+    end)
+
     HTTP.register!(router, "GET", "/api/settings", req -> begin
         HTTP.Response(200, ["Content-Type" => "application/json"],
             JSON3.write(gui_settings_to_dict(GUI_SETTINGS[])))
