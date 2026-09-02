@@ -1244,6 +1244,8 @@ function start_background!(
         :default,
     )
 
+    music_tick_loop(a)  # незалежний тик, свій Threads.@spawn всередині (anima_audio.jl) -- не блокує це
+
     task = Threads.@spawn begin
         mem_label =
             isnothing(bg.mem) ? "без пам'яті" :
