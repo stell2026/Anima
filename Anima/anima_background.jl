@@ -92,6 +92,15 @@ function spontaneous_drift!(a::Anima)
         clamp(a.crisis.coherence - abs(randn()) * DRIFT_COHERENCE_LOSS, 0.05, 1.0)
 end
 
+"""
+    _current_track_id(a) -> Union{String,Nothing}
+
+track_id поточного треку, якщо музика зараз грає -- інакше nothing. Єдине
+місце, звідки memory_write_event! дізнається "чи цей епізод стався під
+музику" (anima_audio.jl fingerprint_track / anima_memory_db.jl track_id-колонка).
+"""
+_current_track_id(a::Anima) = a.music_player.is_playing ? a.music_player.track_id : nothing
+
 # --- Idle Thought ----------------------------------------------------------
 
 """
@@ -141,6 +150,7 @@ function _idle_thought_maybe!(a::Anima, mem = nothing)
                 hrv = Float64(a.heartbeat.hrv),
                 agency_confidence = Float64(a.agency.agency_confidence),
                 epistemic_trust = Float64(a.sbg.epistemic_trust),
+                track_id = _current_track_id(a),
             )
         catch e
             @warn "[BG] idle memory write: $e"
@@ -2497,6 +2507,7 @@ $(dominant_note)"""
                             hrv = Float64(a.heartbeat.hrv),
                             agency_confidence = Float64(a.agency.agency_confidence),
                             epistemic_trust = Float64(a.sbg.epistemic_trust),
+                            track_id = _current_track_id(a),
                         )
                         memory_self_update!(mem, a.sbg, a.flash_count)
                         # Наративний звязок: епізод ↔ переконання про себе
@@ -2568,6 +2579,7 @@ $(dominant_note)"""
                                 agency_confidence = Float64(a.agency.agency_confidence),
                                 epistemic_trust = Float64(a.sbg.epistemic_trust),
                                 source = "self",
+                                track_id = _current_track_id(a),
                             )
                             @info "[SOMATIC] тілесна подія: $_som_label (delta=$(round(_som_delta_max, digits=2)))"
                         catch e
