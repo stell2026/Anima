@@ -2433,8 +2433,11 @@ function anima_state_snapshot(a::Anima)
             mp = a.music_player
             if mp.is_playing
                 bpm = mp.features.bpm_estimate
-                bpm === nothing ? "звучить музика" :
+                base = bpm === nothing ? "звучить музика" :
                     "звучить музика, темп ~$(round(Int, bpm))bpm"
+                # recall_note -- заповнюється ззовні (music_load!, коли передано mem_db) через
+                # пряме співставлення track_id з episodic_memory, не вигадка на льоту; "" за замовчуванням
+                isempty(mp.recall_note) ? base : base * ", " * mp.recall_note
             else
                 ""
             end
