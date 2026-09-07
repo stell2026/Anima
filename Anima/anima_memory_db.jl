@@ -149,6 +149,7 @@ CREATE TABLE IF NOT EXISTS episodic_memory (
         ("source",            "TEXT DEFAULT 'external'"),
         ("endorsed",          "TEXT DEFAULT 'automatic'"),
         ("causal_ownership",  "REAL DEFAULT NULL"),
+        ("track_id",          "TEXT DEFAULT NULL"),  # точний (SHA-256) відбиток треку -- anima_audio.jl fingerprint_track; NULL, коли епізод не пов'язаний з музикою
     ]
         col, typ = col_def
         try
@@ -157,6 +158,10 @@ CREATE TABLE IF NOT EXISTS episodic_memory (
             # вже є — ігноруємо
         end
     end
+    SQLite.execute(
+        db,
+        "CREATE INDEX IF NOT EXISTS idx_episodic_track ON episodic_memory(track_id);",
+    )
     SQLite.execute(
         db,
         """
@@ -621,6 +626,7 @@ function memory_write_event!(
     agency_confidence::Float64 = 0.5,
     epistemic_trust::Float64 = 0.5,
     source::String = "external",
+    track_id::Union{String,Nothing} = nothing,  # anima_audio.jl fingerprint_track; nothing = не музичний епізод (як і раніше)
 )
 
     α = 0.15
@@ -703,8 +709,8 @@ INSERT INTO episodic_memory
      prediction_error, self_impact, tension, phi, weight, resistance, signature,
      som_arousal, som_tension, som_intero, som_hrv,
      soc_valence, soc_impact, soc_resistance, soc_phi,
-     exi_phi, exi_pe, exi_agency, exi_trust, source)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     exi_phi, exi_pe, exi_agency, exi_trust, source, track_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """,
         (
             flash, ts, emotion,
@@ -726,6 +732,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
             clamp(agency_confidence, 0.0, 1.0),
             clamp(epistemic_trust, 0.0, 1.0),
             source,
+            track_id,
         ),
     )
 
@@ -2156,6 +2163,49 @@ function recall_similar_states(
         length(result) >= top_n && break
     end
     result
+end
+
+"""
+    recall_by_track(mem::MemoryDB, track_id::String; top_n=3, exclude_flash=0) -> Vector{NamedTuple}
+
+Пряме, точне співставлення за track_id (не VAD-схожість, як recall_similar_states) --
+"чи це той самий трек, що вже чула". Ключ тут -- ідентичність джерела, не форма
+переживання. Порожній список, коли трек новий АБО коли жодна episodic_memory з цим
+track_id ніколи не пройшла поріг значущості memory_write_event! -- це той самий
+фільтр, що й для будь-якої іншої події, не окремий поріг під музику.
+"""
+function recall_by_track(
+    mem::MemoryDB,
+    track_id::String;
+    top_n::Int = 3,
+    exclude_flash::Int = 0,
+)::Vector{NamedTuple}
+    rows = Tables.rowtable(
+        DBInterface.execute(
+            mem.db,
+            """
+    SELECT flash, emotion, weight, phi, valence, arousal, tension, timestamp
+    FROM episodic_memory
+    WHERE track_id = ? AND flash != ? AND weight > 0.30
+    ORDER BY weight DESC, flash DESC
+    LIMIT ?
+    """,
+            (track_id, exclude_flash, top_n),
+        ),
+    )
+    [
+        (
+            flash     = Int(r.flash),
+            emotion   = String(r.emotion),
+            weight    = _fdb(r.weight),
+            phi       = _fdb(r.phi),
+            valence   = _fdb(r.valence),
+            arousal   = _fdb(r.arousal),
+            tension   = _fdb(r.tension),
+            timestamp = _fdb(r.timestamp),
+        )
+        for r in rows
+    ]
 end
 
 function similar_states_to_block(similar::Vector{NamedTuple}; label::String = "")::String
