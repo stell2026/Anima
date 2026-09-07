@@ -25,6 +25,7 @@ using FFMPEG
 using WAV
 using DSP
 using FFTW
+using SHA
 using Statistics: mean, std
 
 const MUSIC_DIR = joinpath(@__DIR__, "music")
@@ -53,22 +54,58 @@ mutable struct MusicPlayer
     is_playing::Bool
     lk::ReentrantLock
     features::MusicFeatureState
+    track_id::Union{String,Nothing}   # точний (не fuzzy) відбиток -- див. fingerprint_track нижче
+    recall_note::String               # "" поки не перевірено/невідомо; заповнюється ззовні (mem_db є)
 end
 MusicPlayer() =
-    MusicPlayer(nothing, nothing, nothing, 44100, 1, false, ReentrantLock(), MusicFeatureState())
+    MusicPlayer(nothing, nothing, nothing, 44100, 1, false, ReentrantLock(), MusicFeatureState(),
+                nothing, "")
+
+# ---------------------------------------------------------------------------
+# Ідентичність треку -- точний відбиток, з місцем під fuzzy-версію пізніше
+# ---------------------------------------------------------------------------
+
+"""
+    fingerprint_track(samples::Matrix{Float32})::String
+
+Точний (не fuzzy) відбиток треку -- SHA-256 сирого декодованого PCM. Той самий
+файл -> той самий track_id, завжди, без жодних хибних збігів. НЕ впізнає той
+самий трек в іншому рипі/бітрейті/переекспорті -- це вже перцептивна задача
+(напр. спектральний хеш поверх analyze_window, chromaprint-style), свідомо
+відкладено, бо вимагає власного дослідження, а не тому що "поки лінь".
+
+Дизайн навмисно розділений так, щоб пізніша fuzzy-версія не вимагала
+переробки нічого зверху: скрізь, де викликається ця функція чи читається
+mp.track_id, очікується просто String-ключ -- звідки саме він узятий (точний
+хеш чи перцептивний) для решти системи не має значення. Заміниться тільки
+тіло цієї функції.
+"""
+function fingerprint_track(samples::Matrix{Float32})::String
+    bytes = reinterpret(UInt8, vec(samples))
+    bytes2hex(sha256(bytes))
+end
 
 # ---------------------------------------------------------------------------
 # Завантаження / керування (виклики з HTTP-хендлерів anima_gui_server.jl)
 # ---------------------------------------------------------------------------
 
 """
-    music_load!(mp::MusicPlayer, path::String) -> Bool
+    music_load!(mp::MusicPlayer, path::String, mem = nothing, current_flash::Int = 0) -> Bool
 
 Декодує будь-що, що розуміє ffmpeg (mp3 і т.д.), у PCM Float32 через тимчасовий WAV.
 Синхронний, один раз при завантаженні -- не в тику. Не кидає; повертає true/false,
 щоб HTTP-хендлер міг просто передати статус у відповідь.
+
+`mem` -- опційно MemoryDB (без анотації типу: anima_audio.jl підключається до
+anima_memory_db.jl в include-ланцюгу, той самий клас проблеми, що й music_tick_loop(a)
+нижче -- тип MemoryDB ще не існує на цьому місці, дзвінок функції з тіла безпечний,
+анотація в сигнатурі -- ні). Коли передано -- одразу перевіряє, чи цей track_id вже
+десь зустрічався в episodic_memory (recall_by_track, anima_memory_db.jl), і заповнює
+mp.recall_note. Коли не передано (виклик без БД) -- recall_note лишається "", поведінка
+як була. Виклик з mem_db -- зі сторони, де обидва об'єкти видно (HTTP-хендлер
+anima_gui_server.jl чи анологічне місце в anima_background.jl); тут не додано.
 """
-function music_load!(mp::MusicPlayer, path::String)
+function music_load!(mp::MusicPlayer, path::String, mem = nothing, current_flash::Int = 0)
     if !isfile(path)
         println("[MUSIC] load fail: файл не знайдено ($path)")
         return false
@@ -101,6 +138,7 @@ function music_load!(mp::MusicPlayer, path::String)
         samples = hcat(samples, samples)  # моно -> дублюємо в 2 канали для стерео-виводу
     end
 
+    tid = fingerprint_track(samples)
     lock(mp.lk) do
         mp.track_path = path
         mp.track_name = basename(path)
@@ -109,9 +147,39 @@ function music_load!(mp::MusicPlayer, path::String)
         mp.position = 1
         mp.is_playing = false
         mp.features = MusicFeatureState()  # новий трек -- скидаємо onset/bpm-історію попереднього
+        mp.track_id = tid
+        mp.recall_note = ""  # скидаємо перед перевіркою -- якщо mem не передано, лишається пустим чесно, не вигаданим
     end
-    println("[MUSIC] завантажено: $(basename(path)), $(round(size(samples,1)/sr, digits=1))с, $(Int(sr))Hz")
+    println("[MUSIC] завантажено: $(basename(path)), $(round(size(samples,1)/sr, digits=1))с, $(Int(sr))Hz, track_id=$(tid[1:12])…")
+
+    if mem !== nothing
+        _music_apply_recognition!(mp, mem, current_flash)
+    end
     return true
+end
+
+"""
+    _music_apply_recognition!(mp::MusicPlayer, mem, current_flash::Int)
+
+Пряме, точне співставлення track_id з episodic_memory (не VAD-схожість,
+не вигадка) -- дивись recall_by_track в anima_memory_db.jl. Спрацьовує лише
+якщо цей самий трек уже колись перетнув поріг значущості memory_write_event! --
+той самий фільтр, що й для будь-якої іншої події; новий або малозначущий
+трек просто мовчить, mp.recall_note лишається "".
+"""
+function _music_apply_recognition!(mp::MusicPlayer, mem, current_flash::Int)
+    tid = mp.track_id
+    tid === nothing && return
+    try
+        prior = recall_by_track(mem, tid; top_n = 3, exclude_flash = current_flash)
+        if !isempty(prior)
+            n = length(prior)
+            note = n == 1 ? "ця мелодія вже лунала раніше" : "ця мелодія лунала й раніше ($(n) рази)"
+            lock(() -> (mp.recall_note = note), mp.lk)
+        end
+    catch e
+        println("[MUSIC] recognition check failed: $e")
+    end
 end
 
 music_play!(mp::MusicPlayer)  = lock(() -> (mp.samples !== nothing && (mp.is_playing = true)), mp.lk)
@@ -129,7 +197,8 @@ function music_status(mp::MusicPlayer)
         dur = mp.samples === nothing ? 0.0 : size(mp.samples, 1) / mp.samplerate
         pos = mp.samples === nothing ? 0.0 : (mp.position - 1) / mp.samplerate
         return (track_name=mp.track_name, is_playing=mp.is_playing,
-                position_sec=pos, duration_sec=dur, bpm=mp.features.bpm_estimate)
+                position_sec=pos, duration_sec=dur, bpm=mp.features.bpm_estimate,
+                recall_note=mp.recall_note)
     end
 end
 
