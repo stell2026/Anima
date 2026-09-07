@@ -158,7 +158,9 @@ function start_gui_server!(input_queue::Channel{String}; port::Int = 8088, dir::
             open(dest, "w") do f
                 write(f, part.data)
             end
-            ok = music_load!(a.music_player, dest)
+            # _GUI_MEM визначено в anima_background.jl, той самий Ref, що зберігає mem_db
+            # для /api/cmd -- може бути nothing (запуск без пам'яті), music_load! це враховує
+            ok = music_load!(a.music_player, dest, _GUI_MEM[], a.flash_count)
             HTTP.Response(ok ? 200 : 500, ["Content-Type" => "application/json"], "{\"ok\":$ok}")
         catch e
             HTTP.Response(400, ["Content-Type" => "application/json"], "{\"ok\":false,\"error\":\"$(e)\"}")
