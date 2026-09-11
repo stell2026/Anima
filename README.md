@@ -752,6 +752,7 @@ Conceptual and technical writing about the ideas behind Anima, ordered by reach:
 - [I Spent a Year Teaching an AI to Feel the Passage of Time](https://substack.com/home/post/p-198261656) — Substack
 - [Discussion: Cognitive Architectures and Active Inference](https://dou.ua/forums/topic/59409/) — DOU
 - [Discussion: Why a Prompt Can’t Give an AI Agent Initiative](https://dou.ua/forums/topic/60256/) — DOU
+- - [Where the Theories Stop (Video Presentation)](https://www.youtube.com/watch?v=YP0kPekzmcQ) — YouTube (Applied Active Inference Symposium 2026)
 
 - [Personal-site](https://anima.2026-stell.workers.dev/)
 
