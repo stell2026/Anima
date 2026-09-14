@@ -98,6 +98,11 @@
     border-radius:7px;padding:6px 10px;font-family:var(--sans);font-size:12px;cursor:pointer;
   }
   #helpBtn:hover{color:var(--text-primary);border-color:var(--text-dim);}
+  #whyBtn{
+    background:transparent;color:var(--text-dim);border:1px solid var(--agency-violet);
+    border-radius:7px;padding:6px 10px;font-family:var(--sans);font-size:12px;cursor:pointer;
+  }
+  #whyBtn:hover{color:var(--text-primary);background:#201B30;}
   .help-panel{
     position:absolute;top:calc(100% + 8px);right:0;width:340px;max-height:480px;overflow-y:auto;
     background:var(--panel);border:1px solid var(--panel-border);border-radius:10px;
@@ -158,6 +163,19 @@
     border-left:2px solid var(--agency-violet);padding-left:8px;
   }
   .intent-row span{color:var(--text-dim);}
+
+  .why-modal{position:fixed;inset:0;z-index:30;background:rgba(7,6,12,.72);display:flex;align-items:center;justify-content:center;padding:20px;}
+  .why-modal.hidden{display:none;}
+  .why-panel{width:min(620px,100%);max-height:min(760px,92vh);overflow:auto;background:#12101A;border:1px solid var(--agency-violet);border-radius:11px;padding:18px 20px;box-shadow:0 20px 70px rgba(0,0,0,.5);}
+  .why-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;font-family:var(--mono);}
+  .why-head h2{font-size:14px;letter-spacing:.05em;margin:0;color:var(--text-primary);}
+  .why-close{background:transparent;border:1px solid var(--panel-border);border-radius:5px;color:var(--text-dim);cursor:pointer;padding:3px 8px;}
+  .why-close:hover{color:var(--text-primary);border-color:var(--text-dim);}
+  .why-step{border-left:2px solid var(--agency-violet);padding:4px 0 10px 11px;margin:0 0 8px;font-family:var(--mono);font-size:12px;line-height:1.5;}
+  .why-step:last-child{margin-bottom:0;}
+  .why-step b{display:block;color:var(--text-dim);font-size:10px;letter-spacing:.08em;text-transform:uppercase;}
+  .why-values{display:flex;gap:7px;flex-wrap:wrap;margin-top:4px;color:var(--text-primary);}
+  .why-values span{background:#211D31;border-radius:4px;padding:2px 5px;}
 
   .scorebars{margin-top:10px;display:flex;flex-direction:column;gap:4px;}
   .scorebar-row{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:10.5px;}
@@ -260,6 +278,7 @@
     <div style="display:flex;align-items:center;gap:16px;">
       <label class="pause-toggle"><input type="checkbox" id="pauseLive"> <span id="pauseLabel">пауза</span></label>
       <div class="stats" id="statsBar">рядків: 0 · нерозпізнано: 0 · повідомлень: 0</div>
+      <button id="whyBtn" title="Пояснення останнього вибору">Чому?</button>
       <div class="settings-wrap" style="position:relative;margin-right:4px;">
         <button id="helpBtn">?</button>
         <div class="help-panel hidden" id="helpPanel">
@@ -427,6 +446,13 @@
 
 </div>
 
+<div class="why-modal hidden" id="whyModal" role="dialog" aria-modal="true" aria-labelledby="whyTitle">
+  <div class="why-panel">
+    <div class="why-head"><h2 id="whyTitle">Чому я так обрала</h2><button class="why-close" id="whyClose">Закрити</button></div>
+    <div id="whyBody">Ще немає вибору для пояснення.</div>
+  </div>
+</div>
+
 <script>
 var I18N = {
   uk: {
@@ -444,6 +470,14 @@ var I18N = {
     eyebrowMal: 'MAL / арбітраж', eyebrowCausal: 'Causal / Audit / Пам\'ять',
     heartbeatNote: 'серцебиття за BPM',
     chatHeader: 'Розмова', chatPlaceholder: 'Напиши Анімі…', send: 'Надіслати',
+    whyButton: 'Чому?', whyTitle: 'Чому я так обрала', whyClose: 'Закрити',
+    whyDirection: '1 · Обраний напрямок', whyWeight: '2 · Що мало найбільшу вагу',
+    whyCommitment: '3 · Власне зобов’язання', whyExpected: '4 · Очікуваний наслідок',
+    whyOutcome: '5 · Останній перевірений наслідок', whyValues: '6 · Активні цінності',
+    whySource: 'джерело', whyArbitration: 'арбітраж', whyDeterminant: 'визначник',
+    whyAlternative: 'альтернатива', whyNoCommitment: 'Активного авторського зобов’язання немає.',
+    whyExpectedValence: 'очікувана валентність', whyNoOutcome: 'Ще немає закритої дії.',
+    whyActualValence: 'фактична валентність', whyOwnership: 'власний вплив',
     noEvents: '— поки немає подій —',
     feltLabel: 'Аніма · внутрішній наратив', llmLabel: 'Аніма · LLM',
     statLines: 'рядків', statUnrec: 'нерозпізнано', statMsgs: 'повідомлень',
@@ -522,6 +556,14 @@ var I18N = {
     eyebrowMal: 'MAL / arbitration', eyebrowCausal: 'Causal / Audit / Memory',
     heartbeatNote: 'heartbeat at BPM',
     chatHeader: 'Conversation', chatPlaceholder: 'Write to Anima…', send: 'Send',
+    whyButton: 'Why?', whyTitle: 'Why I chose this', whyClose: 'Close',
+    whyDirection: '1 · Chosen direction', whyWeight: '2 · Strongest influence',
+    whyCommitment: '3 · Self-authored commitment', whyExpected: '4 · Expected outcome',
+    whyOutcome: '5 · Last verified outcome', whyValues: '6 · Active values',
+    whySource: 'source', whyArbitration: 'arbitration', whyDeterminant: 'determinant',
+    whyAlternative: 'alternative', whyNoCommitment: 'No active self-authored commitment.',
+    whyExpectedValence: 'expected valence', whyNoOutcome: 'No action has been resolved yet.',
+    whyActualValence: 'actual valence', whyOwnership: 'causal ownership',
     noEvents: '— no events yet —',
     feltLabel: 'Anima · inner narrative', llmLabel: 'Anima · LLM',
     statLines: 'lines', statUnrec: 'unrecognized', statMsgs: 'messages',
@@ -611,6 +653,10 @@ function applyLanguage(lang){
   document.getElementById('chatHeader').textContent = t('chatHeader');
   document.getElementById('chatInput').placeholder = t('chatPlaceholder');
   document.getElementById('chatSendBtn').textContent = t('send');
+  document.getElementById('whyBtn').textContent = t('whyButton');
+  document.getElementById('whyBtn').title = t('whyTitle');
+  document.getElementById('whyTitle').textContent = t('whyTitle');
+  document.getElementById('whyClose').textContent = t('whyClose');
   document.getElementById('langSelect').value = currentLang;
   document.getElementById('helpSectionVitals').textContent = t('helpSectionVitals');
   document.getElementById('helpSectionSelf').textContent = t('helpSectionSelf');
@@ -618,6 +664,7 @@ function applyLanguage(lang){
   document.getElementById('helpSectionCausal').textContent = t('helpSectionCausal');
   renderHelp();
   renderTermHelp();
+  if(!document.getElementById('whyModal').classList.contains('hidden')) renderWhy();
   refreshDynamicLabels();
 }
 
@@ -688,7 +735,8 @@ function freshState(){
             vfe:null,vfeMode:null,bpm:null,hrv:null,attn:null,G:null,Gdelta:null,H:null,vfeDrift:null},
     self:{spe:null,agency:null,stab:null,etrust:null,sd:null,sc:null,crisis:null,coh:null,graveyard:null,
           disclosure:null,disclosureThr:null,shadowP:null,intent:null,flashId:null,
-          contactNeed:null,identityDrift:null,chronicLowSerotonin:null},
+          contactNeed:null,identityDrift:null,chronicLowSerotonin:null,
+          actionsPending:null,lastAction:null,lastActionStatus:null},
     mal:{regimeFrom:null,regimeTo:null,dominant:null,score:null,det:null,runnerUp:null,
          runnerUpScore:null,scores:null,events:[]},
     causal:{auditScore:null,auditCo:null,endorsed:null,cfCo:null,cfAgencyCo:null,cfFlash:null,
@@ -934,6 +982,8 @@ function renderSelf(s){
   rows.push(metricRowSpark('identity drift', fmt(s.identityDrift),
     sparklineSvg(metricHistory.identityDrift, '#D4506A')));
   rows.push(metricRow('chronic S↓', s.chronicLowSerotonin != null ? String(s.chronicLowSerotonin) : '—'));
+  rows.push(metricRow('action', s.lastAction ? (s.lastAction + ' [' + (s.lastActionStatus || '—') + ']') : '—'));
+  rows.push(metricRow('actions pending', s.actionsPending != null ? String(s.actionsPending) : '—'));
   document.getElementById('selfMetrics').innerHTML = rows.join('');
   document.getElementById('selfLabel').textContent = s.flashId ? ('#' + s.flashId) : '—';
   document.getElementById('intentRow').innerHTML = '<span>intent:</span> ' + (s.intent || '—');
@@ -1089,6 +1139,7 @@ var _polling = false;
 function applyLiveState(raw){
   if(!raw || !raw.vitals || !raw.self || !raw.causal) return;
   var v = liveState.vitals, s = liveState.self, mal = liveState.mal, c = liveState.causal;
+  window._whyState = raw.why || null;
 
   v.D = raw.vitals.D; v.S = raw.vitals.S; v.N = raw.vitals.N;
   v.phi = raw.vitals.phi; v.phiPrev = raw.vitals.phi_prior;
@@ -1106,6 +1157,10 @@ function applyLiveState(raw){
   s.contactNeed = raw.self.contact_need != null ? raw.self.contact_need : null;
   s.identityDrift = raw.self.identity_drift != null ? raw.self.identity_drift : null;
   s.chronicLowSerotonin = raw.self.chronic_low_serotonin != null ? raw.self.chronic_low_serotonin : null;
+  s.actionsPending = raw.self.actions_pending != null ? raw.self.actions_pending : null;
+  s.lastAction = raw.self.last_action || null;
+  s.lastActionStatus = raw.self.last_action_status || null;
+  if(!document.getElementById('whyModal').classList.contains('hidden')) renderWhy();
 
   mal.dominant = raw.causal.mal_dominant; mal.regimeTo = raw.causal.mal_regime;
   mal.score = raw.causal.mal_score; mal.det = raw.causal.mal_determinant;
@@ -1133,6 +1188,36 @@ function applyLiveState(raw){
   document.getElementById('statsBar').innerHTML =
     'flash: <b>#' + (raw.flash_id || '—') + '</b> · ' +
     t('statMsgs') + ': <b>' + liveState.chat.length + '</b>';
+}
+
+function whyEsc(value){
+  return String(value == null || value === '' ? '—' : value)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function whyNum(value){ return value == null ? '—' : fmt(value); }
+function renderWhy(){
+  var w = window._whyState;
+  var body = document.getElementById('whyBody');
+  if(!w){ body.textContent = 'Ще немає вибору для пояснення.'; return; }
+  var values = w.values || {};
+  body.innerHTML =
+    '<div class="why-step"><b>' + t('whyDirection') + '</b>' + whyEsc(w.intent || w.action_goal) +
+    '<br><span style="color:var(--text-dim)">' + t('whySource') + ': ' + whyEsc(w.action_origin) + '</span></div>' +
+    '<div class="why-step"><b>' + t('whyWeight') + '</b>' +
+    t('whyArbitration') + ': ' + whyEsc(w.mal_dominant) + ' [' + whyEsc(w.mal_regime) + ']' +
+    '<br><span style="color:var(--text-dim)">' + t('whyDeterminant') + ': ' + whyEsc(w.mal_determinant) +
+    ' · ' + t('whyAlternative') + ': ' + whyEsc(w.mal_runner_up) + '</span></div>' +
+    '<div class="why-step"><b>' + t('whyCommitment') + '</b>' +
+    (w.authored_goal ? whyEsc(w.authored_goal) + ' · stake=' + whyNum(w.authored_stake) : t('whyNoCommitment')) + '</div>' +
+    '<div class="why-step"><b>' + t('whyExpected') + '</b>' +
+    t('whyExpectedValence') + ': ' + whyNum(w.expected_valence) + '</div>' +
+    '<div class="why-step"><b>' + t('whyOutcome') + '</b>' +
+    (w.last_outcome_goal ? whyEsc(w.last_outcome_goal) + ' [' + whyEsc(w.last_outcome_status) + ']' +
+      '<br><span style="color:var(--text-dim)">' + t('whyActualValence') + ': ' + whyNum(w.last_outcome_valence) +
+      ' · ' + t('whyOwnership') + ': ' + whyNum(w.last_outcome_ownership) + '</span>' : t('whyNoOutcome')) + '</div>' +
+    '<div class="why-step"><b>' + t('whyValues') + '</b><div class="why-values">' +
+    ['autonomy','care','fairness','integrity','growth'].map(function(k){ return '<span>' + k + ': ' + whyNum(values[k]) + '</span>'; }).join('') +
+    '</div></div>';
 }
 
 function routeLiveEvent(ev){
@@ -1262,6 +1347,17 @@ function sendMessage(){
 document.getElementById('chatSendBtn').addEventListener('click', sendMessage);
 document.getElementById('chatInput').addEventListener('keydown', function(e){
   if(e.key === 'Enter'){ e.preventDefault(); sendMessage(); }
+});
+
+document.getElementById('whyBtn').addEventListener('click', function(){
+  renderWhy();
+  document.getElementById('whyModal').classList.remove('hidden');
+});
+document.getElementById('whyClose').addEventListener('click', function(){
+  document.getElementById('whyModal').classList.add('hidden');
+});
+document.getElementById('whyModal').addEventListener('click', function(e){
+  if(e.target === this) this.classList.add('hidden');
 });
 
 // ───────────────────────── Налаштування ─────────────────────────

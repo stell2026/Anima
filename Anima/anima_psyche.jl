@@ -765,7 +765,8 @@ function update_moral!(
     dissonance::Float64,
     integrity::Float64,
 )
-    origin=="values" && (mc.agency=clamp01(mc.agency+0.03))
+    origin in ("values", "values_veto") &&
+        (mc.agency=clamp01(mc.agency+0.03))
     dissonance>0.5 && (mc.agency=clamp01(mc.agency-0.02))
     emotion in ("Горе", "Каяття", "Провина")&&mc.agency>0.5 ?
     (mc.guilt=clamp01(mc.guilt+0.08)) : (mc.guilt=max(0.0, mc.guilt-0.03))
@@ -1257,6 +1258,20 @@ mutable struct IntentEngine
 end
 IntentEngine()=IntentEngine(nothing, BoundedQueue{String}(10), BoundedQueue{String}(8))
 
+# The drive proposes a small menu; values choose among genuinely available
+# options. This is intentionally a bias, not a veto: urgent safety and agency
+# constraints below may still override it.
+function value_weighted_goal(goals, vs::ValueSystem, emotion::String)::String
+    scored = [(goal = goal, score = begin
+        fields = _goal_value_fields(goal)
+        alignment = isempty(fields) ? 0.0 : sum(getfield(vs, f) for f in fields) / length(fields)
+        # Deterministic tie-breaker keeps variety without making values random.
+        alignment + (abs(hash(goal * emotion)) % 1000) / 1_000_000.0
+    end) for goal in goals]
+    sort!(scored, by = item -> -item.score)
+    scored[1].goal
+end
+
 function update_intent!(
     ie::IntentEngine,
     dom_drive::Union{String,Nothing},
@@ -1290,10 +1305,10 @@ function update_intent!(
         end
 
         goals = DRIVE_GOALS[active_drive]
-        goal = goals[abs(hash(emotion))%length(goals)+1]
+        goal = value_weighted_goal(goals, vs, emotion)
         vetoed, alt = veto(vs, goal, emotion)
         vetoed && (goal = alt)
-        origin = vetoed ? "values" : (active_drive != dom_drive ? "satiation" : "drive")
+        origin = vetoed ? "values_veto" : (active_drive != dom_drive ? "satiation" : "value_weighted")
 
         # AgencyLoop → вибір intent: низький causal_ownership зміщує до пасивних цілей
         if agency_ownership < 0.30
@@ -2715,6 +2730,205 @@ function authorship_slow_tick!(sa::SelfAuthorship, flash::Int)
     nothing
 end
 
+# --- Value Formation -------------------------------------------------------
+# Values do not follow a mood directly. They accrue only where an intention was
+# sufficiently owned, significant, and repeated enough to become part of a
+# lived commitment. This keeps a value distinct from a one-off preference.
+
+function _goal_value_fields(goal::String)::Vector{Symbol}
+    text = lowercase(goal)
+    fields = Symbol[]
+    any(marker -> occursin(marker, text), ("меж", "захистити себе", "відстояти", "спостерігати")) &&
+        push!(fields, :autonomy)
+    any(marker -> occursin(marker, text), ("зв'яз", "стосунок", "почу", "поділи", "поваго")) &&
+        push!(fields, :care)
+    any(marker -> occursin(marker, text), ("дослід", "зрозумі", "стимул", "навч")) &&
+        push!(fields, :growth)
+    # Integrity is about carrying an owned intention through, whatever its
+    # content. Fairness has no reliable behavioural signal yet, so it is left
+    # unchanged rather than fabricated from unrelated experience.
+    fields
+end
+
+"""Apply a small, evidence-gated revision to values.
+
+The constitutional baseline is never overwritten. Each revision is capped and
+may occur at most once per 60 flashes per value, so no immediate dialogue can
+install or erase a value.
+"""
+function revise_values!(vs::ValueSystem, flash::Int)
+    revisions = NamedTuple[]
+    for field in VALUE_FIELDS
+        evidence = vs.evidence[field]
+        observations = evidence.support + evidence.conflict
+        observations < 6 && continue
+        evidence.self_authored_support < 2 && continue
+        flash - evidence.last_revision_flash < 60 && continue
+
+        reliability = evidence.self_authored_support / max(evidence.support, 1)
+        direction = clamp((evidence.support - evidence.conflict) / observations, -1.0, 1.0)
+        abs(direction) < 0.15 && continue
+        delta = clamp(direction * reliability * 0.018, -0.018, 0.018)
+        baseline = get(vs.baseline, field, getfield(vs, field))
+        old = getfield(vs, field)
+        new = clamp(old + delta, max(0.15, baseline - 0.22), min(0.95, baseline + 0.22))
+        abs(new - old) < 0.001 && continue
+        setfield!(vs, field, new)
+        evidence.last_revision_flash = flash
+        vs.revision_count += 1
+        push!(revisions, (field = field, delta = round(new - old, digits = 3), value = round(new, digits = 3)))
+    end
+    revisions
+end
+
+# --- Action → Consequence Ledger ------------------------------------------
+# An intention is only a proposal. The ledger makes it a testable action by
+# keeping its expected result open until another experience supplies an actual
+# result. This is the bridge from "I wanted" to "I did, and this followed".
+
+mutable struct ActionRecord
+    id::Int
+    goal::String
+    origin::String
+    created_flash::Int
+    predicted_valence::Float64
+    actual_valence::Union{Nothing,Float64}
+    ownership::Float64
+    authored::Bool
+    value_fields::Vector{Symbol}
+    status::Symbol              # :pending, :confirmed, :costly, :mixed, :uncertain
+end
+
+mutable struct ActionLedger
+    records::Vector{ActionRecord}
+    next_id::Int
+    max_records::Int
+end
+ActionLedger() = ActionLedger(ActionRecord[], 1, 40)
+
+function open_action!(
+    ledger::ActionLedger,
+    goal::String,
+    origin::String,
+    flash::Int,
+    predicted_valence::Float64,
+    authored::Bool,
+)
+    # Repeating the same still-pending action is persistence, not a new action.
+    any(r -> r.status == :pending && r.goal == goal, ledger.records) && return nothing
+    length(ledger.records) >= ledger.max_records && deleteat!(ledger.records, 1)
+    fields = _goal_value_fields(goal)
+    authored && push!(fields, :integrity)
+    push!(ledger.records, ActionRecord(
+        ledger.next_id, goal, origin, flash, clamp(predicted_valence, -1.0, 1.0),
+        nothing, 0.0, authored, unique(fields), :pending,
+    ))
+    ledger.next_id += 1
+    ledger.records[end]
+end
+
+function observe_value_outcome!(
+    vs::ValueSystem,
+    action::ActionRecord,
+    flash::Int;
+    significance::Float64,
+    authenticity_drift::Float64,
+)
+    # An uncertain event tells Anima nothing reliable about its values.
+    action.status == :uncertain && return nothing
+    significance < 0.28 && return nothing
+    for field in action.value_fields
+        evidence = vs.evidence[field]
+        if action.status == :confirmed
+            evidence.support += 1
+            action.authored && (evidence.self_authored_support += 1)
+        elseif action.status == :costly
+            evidence.conflict += 1
+        end
+        # A loss of authenticity is independently a counterexample, even if
+        # the immediate result was otherwise acceptable.
+        authenticity_drift >= 0.45 && (evidence.conflict += 1)
+    end
+    nothing
+end
+
+function resolve_pending_action!(
+    ledger::ActionLedger,
+    vs::ValueSystem,
+    flash::Int;
+    actual_valence::Float64,
+    agency_ownership::Float64,
+    significance::Float64,
+    authenticity_drift::Float64,
+)
+    pending = findfirst(r -> r.status == :pending && r.created_flash < flash, ledger.records)
+    isnothing(pending) && return nothing
+    action = ledger.records[pending]
+    action.actual_valence = clamp(actual_valence, -1.0, 1.0)
+    action.ownership = clamp01(agency_ownership)
+    outcome_gap = action.actual_valence - action.predicted_valence
+    action.status = if action.ownership < 0.38
+        :uncertain
+    elseif outcome_gap >= -0.18
+        :confirmed
+    elseif outcome_gap <= -0.35
+        :costly
+    else
+        :mixed
+    end
+    observe_value_outcome!(
+        vs, action, flash;
+        significance = significance, authenticity_drift = authenticity_drift,
+    )
+    @info "[ACTION] #$(action.id) $(action.goal): $(action.status) " *
+          "expected=$(round(action.predicted_valence,digits=2)) actual=$(round(action.actual_valence,digits=2)) " *
+          "ownership=$(round(action.ownership,digits=2))"
+    action
+end
+
+function action_ledger_snapshot(ledger::ActionLedger)
+    latest = isempty(ledger.records) ? nothing : ledger.records[end]
+    resolved = findlast(r -> r.status != :pending, ledger.records)
+    last_resolved = isnothing(resolved) ? nothing : ledger.records[resolved]
+    (
+        pending = count(r -> r.status == :pending, ledger.records),
+        last_goal = isnothing(latest) ? "" : latest.goal,
+        last_status = isnothing(latest) ? "" : String(latest.status),
+        last_id = isnothing(latest) ? 0 : latest.id,
+        last_origin = isnothing(latest) ? "" : latest.origin,
+        expected_valence = isnothing(latest) ? nothing : round(latest.predicted_valence, digits = 3),
+        outcome_goal = isnothing(last_resolved) ? "" : last_resolved.goal,
+        outcome_status = isnothing(last_resolved) ? "" : String(last_resolved.status),
+        actual_valence = isnothing(last_resolved) ? nothing : last_resolved.actual_valence,
+        outcome_ownership = isnothing(last_resolved) ? nothing : round(last_resolved.ownership, digits = 3),
+    )
+end
+
+function action_ledger_to_json(ledger::ActionLedger)
+    Dict("next_id" => ledger.next_id, "records" => [Dict(
+        "id" => r.id, "goal" => r.goal, "origin" => r.origin,
+        "created_flash" => r.created_flash, "predicted_valence" => r.predicted_valence,
+        "actual_valence" => r.actual_valence, "ownership" => r.ownership,
+        "authored" => r.authored, "value_fields" => String.(r.value_fields),
+        "status" => String(r.status),
+    ) for r in ledger.records])
+end
+
+function action_ledger_from_json!(ledger::ActionLedger, d::AbstractDict)
+    empty!(ledger.records)
+    for item in get(d, "records", Any[])
+        push!(ledger.records, ActionRecord(
+            Int(get(item, "id", 0)), String(get(item, "goal", "")), String(get(item, "origin", "")),
+            Int(get(item, "created_flash", 0)), Float64(get(item, "predicted_valence", 0.0)),
+            isnothing(get(item, "actual_valence", nothing)) ? nothing : Float64(item["actual_valence"]),
+            Float64(get(item, "ownership", 0.0)), Bool(get(item, "authored", false)),
+            Symbol.(get(item, "value_fields", String[])), Symbol(get(item, "status", "mixed")),
+        ))
+    end
+    ledger.next_id = Int(get(d, "next_id", isempty(ledger.records) ? 1 : maximum(r.id for r in ledger.records) + 1))
+    nothing
+end
+
 function reflect_authorship!(
     sa::SelfAuthorship,
     values::ValueSystem,
@@ -2727,21 +2941,11 @@ function reflect_authorship!(
     agency_ownership < 0.45 && return nothing
     authenticity_drift >= 0.55 && return nothing
 
-    active = filter(c -> c.status == :active, sa.commitments)
-    observations = sum(c.follow_through + c.deviations for c in active)
-    observations < 6 && return nothing
-
-    kept = sum(c.follow_through for c in active)
-    departed = sum(c.deviations for c in active)
-    delta = clamp((kept - departed) / observations * 0.025, -0.025, 0.025)
-    abs(delta) < 0.005 && return nothing
-
-    # Обмежений перегляд: досвід може лише трохи зсунути вагу автономії
-    # та цілісності, але не переписати засадничі цінності за один цикл.
-    values.autonomy = clamp(values.autonomy + delta, 0.45, 0.90)
-    values.integrity = clamp(values.integrity + delta * 0.5, 0.50, 0.95)
-    sa.authored_revisions += 1
-    @info "[AUTHORSHIP] Рефлексія цінностей: Δ=$(round(delta, digits=3))"
+    revisions = revise_values!(values, flash)
+    isempty(revisions) && return nothing
+    sa.authored_revisions += length(revisions)
+    summary = join(["$(r.field)=Δ$(r.delta)→$(r.value)" for r in revisions], ", ")
+    @info "[VALUES] Рефлексія цінностей: $summary"
     nothing
 end
 

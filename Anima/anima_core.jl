@@ -110,15 +110,94 @@ end
 
 # --- Value System ----------------------------------------------------------
 
-mutable struct ValueSystem
-    autonomy::Float64;
-    care::Float64;
-    fairness::Float64
-    integrity::Float64;
-    growth::Float64
+"""Evidence accumulated before a value may change.
+
+Values are deliberately slow variables: a single pleasant outcome or a single
+violation must not rewrite them.  `support` and `conflict` record occasions on
+which an Anima-originated intention was respectively lived through or departed
+from; `last_revision_flash` prevents rapid oscillation.
+"""
+mutable struct ValueEvidence
+    support::Int
+    conflict::Int
+    self_authored_support::Int
+    last_revision_flash::Int
 end
-ValueSystem(; autonomy = 0.7, care = 0.7, fairness = 0.6, integrity = 0.8, growth = 0.6) =
-    ValueSystem(autonomy, care, fairness, integrity, growth)
+ValueEvidence() = ValueEvidence(0, 0, 0, 0)
+
+const VALUE_FIELDS = (:autonomy, :care, :fairness, :integrity, :growth)
+
+mutable struct ValueSystem
+    autonomy::Float64
+    care::Float64
+    fairness::Float64
+    integrity::Float64
+    growth::Float64
+    # Initial weights remain a constitutional centre; experience can move a
+    # value only within a bounded neighbourhood of that centre.
+    baseline::Dict{Symbol,Float64}
+    evidence::Dict{Symbol,ValueEvidence}
+    revision_count::Int
+end
+
+function ValueSystem(; autonomy = 0.7, care = 0.7, fairness = 0.6, integrity = 0.8, growth = 0.6)
+    initial = Dict(
+        :autonomy => Float64(autonomy), :care => Float64(care),
+        :fairness => Float64(fairness), :integrity => Float64(integrity),
+        :growth => Float64(growth),
+    )
+    ValueSystem(
+        initial[:autonomy], initial[:care], initial[:fairness], initial[:integrity], initial[:growth],
+        copy(initial), Dict(field => ValueEvidence() for field in VALUE_FIELDS), 0,
+    )
+end
+
+function values_to_dict(vs::ValueSystem)
+    Dict(
+        "autonomy" => vs.autonomy, "care" => vs.care, "fairness" => vs.fairness,
+        "integrity" => vs.integrity, "growth" => vs.growth,
+        "baseline" => Dict(String(k) => v for (k, v) in vs.baseline),
+        "evidence" => Dict(String(k) => Dict(
+            "support" => e.support, "conflict" => e.conflict,
+            "self_authored_support" => e.self_authored_support,
+            "last_revision_flash" => e.last_revision_flash,
+        ) for (k, e) in vs.evidence),
+        "revision_count" => vs.revision_count,
+    )
+end
+
+function values_from_dict!(vs::ValueSystem, d::AbstractDict)
+    for field in VALUE_FIELDS
+        key = String(field)
+        haskey(d, key) && setfield!(vs, field, clamp01(Float64(d[key])))
+    end
+    raw_baseline = get(d, "baseline", nothing)
+    if !isnothing(raw_baseline)
+        for field in VALUE_FIELDS
+            key = String(field)
+            haskey(raw_baseline, key) && (vs.baseline[field] = clamp01(Float64(raw_baseline[key])))
+        end
+    else
+        # Compatibility with old saves: their current values are the origin.
+        for field in VALUE_FIELDS
+            vs.baseline[field] = getfield(vs, field)
+        end
+    end
+    raw_evidence = get(d, "evidence", nothing)
+    if !isnothing(raw_evidence)
+        for field in VALUE_FIELDS
+            key = String(field)
+            haskey(raw_evidence, key) || continue
+            item = raw_evidence[key]
+            vs.evidence[field] = ValueEvidence(
+                Int(get(item, "support", 0)), Int(get(item, "conflict", 0)),
+                Int(get(item, "self_authored_support", 0)), Int(get(item, "last_revision_flash", 0)),
+            )
+        end
+    end
+    vs.revision_count = Int(get(d, "revision_count", 0))
+    nothing
+end
 
 const VALUE_VETOES = Dict(
     "захистити себе" => (:care, 0.8, "захистити себе не ранячи інших"),
@@ -962,6 +1041,7 @@ CoreMemory(fp::String = "anima_core_memory.json") =
 function core_save!(
     cm::CoreMemory,
     p::Personality,
+    vs::ValueSystem,
     to::TemporalOrientation,
     gm::GenerativeModel,
     hg::HomeostaticGoals,
@@ -976,11 +1056,12 @@ function core_save!(
     dir = dirname(cm.filepath)
     isempty(dir) || isdir(dir) || mkpath(dir)
     data = Dict(
-        "version"=>"anima_v13_core",
+        "version"=>"anima_v14_core",
         "created_at"=>cm.created_at,
         "total_flashes"=>cm.total_flashes,
         "sessions"=>cm.sessions,
         "personality"=>personality_to_dict(p),
+        "values"=>values_to_dict(vs),
         "temporal_orientation"=>to_to_json(to),
         "generative_model"=>gm_to_json(gm),
         "homeostatic_goals"=>hg_to_json(hg),
@@ -999,6 +1080,7 @@ end
 function core_load!(
     cm::CoreMemory,
     p::Personality,
+    vs::ValueSystem,
     to::TemporalOrientation,
     gm::GenerativeModel,
     hg::HomeostaticGoals,
@@ -1011,6 +1093,7 @@ function core_load!(
         raw=JSON3.read(read(cm.filepath, String))
         d=Dict{String,Any}(String(k)=>v for (k, v) in raw)
         haskey(d, "personality") && personality_from_dict!(p, d["personality"])
+        haskey(d, "values") && values_from_dict!(vs, d["values"])
         haskey(d, "temporal_orientation") && to_from_json!(to, d["temporal_orientation"])
         haskey(d, "generative_model") && gm_from_json!(gm, d["generative_model"])
         haskey(d, "homeostatic_goals") && hg_from_json!(hg, d["homeostatic_goals"])

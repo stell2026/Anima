@@ -1127,11 +1127,12 @@ end
 
 function background_save!(a::Anima)
     core_data = Dict(
-        "version" => "anima_v13_core",
+        "version" => "anima_v14_core",
         "created_at" => a.core_mem.created_at,
         "total_flashes" => a.flash_count,
         "sessions" => a.core_mem.sessions,
         "personality" => personality_to_dict(a.personality),
+        "values" => values_to_dict(a.values),
         "temporal_orientation" => to_to_json(a.temporal),
         "generative_model" => gm_to_json(a.gen_model),
         "homeostatic_goals" => hg_to_json(a.homeostasis),
@@ -1151,6 +1152,7 @@ function background_save!(a::Anima)
         "unknown_register" => ur_to_json(a.unknown_register),
         "authenticity_monitor" => am_to_json(a.authenticity_monitor),
         "authorship" => authorship_to_json(a.authorship),
+        "actions" => action_ledger_to_json(a.actions),
         "intent_engine" => Dict(
             "current_goal" => isnothing(a.intent_engine.current) ? "" : a.intent_engine.current.goal,
             "current_strength" => isnothing(a.intent_engine.current) ? 0.0 : a.intent_engine.current.strength,

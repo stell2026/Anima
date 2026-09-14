@@ -214,6 +214,7 @@ mutable struct Anima
     commitment_registry::CommitmentRegistry
     life_threads::Vector{CuriosityThread}  # довгострокові незакриті теми
     authorship::SelfAuthorship              # власні зобов'язання та їхня історія
+    actions::ActionLedger                   # власні дії, очікування та наслідки
     # Self
     sbg::SelfBeliefGraph
     spm::SelfPredictiveModel
@@ -299,6 +300,7 @@ function Anima(;
         CommitmentRegistry(),
         CuriosityThread[],      # life_threads
         SelfAuthorship(),
+        ActionLedger(),
         SelfBeliefGraph(),
         SelfPredictiveModel(),
         AgencyLoop(),
@@ -331,6 +333,7 @@ function Anima(;
     saved = core_load!(
         a.core_mem,
         a.personality,
+        a.values,
         a.temporal,
         a.gen_model,
         a.homeostasis,
@@ -377,6 +380,7 @@ function Anima(;
             haskey(_d, "authenticity_monitor") &&
                 am_from_json!(a.authenticity_monitor, _d["authenticity_monitor"])
             haskey(_d, "authorship") && authorship_from_json!(a.authorship, _d["authorship"])
+            haskey(_d, "actions") && action_ledger_from_json!(a.actions, _d["actions"])
             if haskey(_d, "intent_engine")
                 ie_d = _d["intent_engine"]
                 goal = String(get(ie_d, "current_goal", ""))
@@ -440,6 +444,7 @@ function save!(a::Anima; summary = "", verbose = false)
     core_save!(
         a.core_mem,
         a.personality,
+        a.values,
         a.temporal,
         a.gen_model,
         a.homeostasis,
@@ -481,6 +486,7 @@ function save!(a::Anima; summary = "", verbose = false)
         "unknown_register"=>ur_to_json(a.unknown_register),
         "authenticity_monitor"=>am_to_json(a.authenticity_monitor),
         "authorship"=>authorship_to_json(a.authorship),
+        "actions"=>action_ledger_to_json(a.actions),
         "intent_engine"=>Dict(
             "current_goal" =>
                 isnothing(a.intent_engine.current) ? "" : a.intent_engine.current.goal,
@@ -1195,6 +1201,17 @@ function experience!(
     # evaluate_agency! оцінює попередній intent: чи actual vad відповідає predicted?
     # Має бути ДО register_intent! — спочатку оцінюємо що було, потім реєструємо нове
     _agency_eval = evaluate_agency!(a.agency, vad, a.flash_count)
+    # Закриваємо попередню дію фактичним досвідом до появи нового наміру.
+    # Саме тут цінності отримують наслідок вчинку, а не миттєвий настрій.
+    resolve_pending_action!(
+        a.actions,
+        a.values,
+        a.flash_count;
+        actual_valence = Float64(vad[1]),
+        agency_ownership = Float64(_agency_eval.causal_ownership),
+        significance = Float64(sig_total(a.significance)),
+        authenticity_drift = Float64(a.authenticity_monitor.authenticity_drift),
+    )
 
     # MAL Фаза 2: drive influence на фінальний intent.
     # Перший update_intent! (вище) — чиста NT-динаміка, не чіпаємо.
@@ -1284,6 +1301,19 @@ function experience!(
         significance = Float64(sig_total(a.significance)),
         authenticity_drift = Float64(a.authenticity_monitor.authenticity_drift),
     )
+    _action_goal = isnothing(intent) ? "бути присутньою" : intent.goal
+    _action_origin = isnothing(intent) ? "default" :
+        (hasproperty(intent, :origin) ? intent.origin : "belief_resistance")
+    _action_authored = any(c -> c.status == :active && c.goal == _action_goal, a.authorship.commitments)
+    open_action!(
+        a.actions,
+        _action_goal,
+        _action_origin,
+        a.flash_count,
+        get(a.gen_model.posterior_mu, 1, Float64(vad[1])),
+        _action_authored,
+    )
+    action_snap = action_ledger_snapshot(a.actions)
 
     # Crisis Module
     crisis_snap = update_crisis!(
@@ -1536,6 +1566,7 @@ function experience!(
         authenticity = am_snap,
         inner_dialogue = id_snap,
         authorship = authorship_snap,
+        actions = action_snap,
         shadow = sr_snap,
         narrative = build_narrative(
             a,
