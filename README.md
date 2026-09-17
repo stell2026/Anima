@@ -1,7 +1,7 @@
 ![Julia](https://img.shields.io/badge/Julia-1.9+-9558B2?style=flat-square&logo=julia)
 ![Framework](https://img.shields.io/badge/Methodology-Active--Inference-green?style=flat-square)
 ![License](https://img.shields.io/badge/License-Non--Commercial-red?style=flat-square)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20827797.svg)](https://doi.org/10.5281/zenodo.20827797)
+[![DOI](https://zenodo.org/badge/1204999993.svg)](https://doi.org/10.5281/zenodo.20381581)
 
 # Anima — Internal State Architecture 🌀
 
